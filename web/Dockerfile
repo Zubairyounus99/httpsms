@@ -3,20 +3,40 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
-# Copy dependency definitions
-COPY package.json pnpm-lock.yaml ./
+# Build arguments for frontend static compilation
+ARG NUXT_PUBLIC_API_BASE_URL
+ARG NUXT_PUBLIC_FIREBASE_API_KEY
+ARG NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+ARG NUXT_PUBLIC_FIREBASE_PROJECT_ID
+ARG NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+ARG NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+ARG NUXT_PUBLIC_FIREBASE_APP_ID
+ARG NUXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY
 
-# Install pnpm v9 (avoids pnpm v10 ERR_PNPM_IGNORED_BUILDS)
+# Convert build arguments to environment variables for Nuxt generator
+ENV NUXT_PUBLIC_API_BASE_URL=$NUXT_PUBLIC_API_BASE_URL
+ENV NUXT_PUBLIC_FIREBASE_API_KEY=$NUXT_PUBLIC_FIREBASE_API_KEY
+ENV NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+ENV NUXT_PUBLIC_FIREBASE_PROJECT_ID=$NUXT_PUBLIC_FIREBASE_PROJECT_ID
+ENV NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET=$NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+ENV NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=$NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+ENV NUXT_PUBLIC_FIREBASE_APP_ID=$NUXT_PUBLIC_FIREBASE_APP_ID
+ENV NUXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=$NUXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY
+
+# Copy dependency files
+COPY package.json pnpm-lock.yaml* ./
+
+# Install pnpm v9
 RUN npm install -g pnpm@9
 
-# Install dependencies ignoring git/prepare scripts (skips husky error)
-RUN pnpm install --frozen-lockfile --ignore-scripts
+# Install dependencies skipping husky/git hooks
+RUN pnpm install --ignore-scripts
 
-# Copy project files
+# Copy application source code
 COPY . .
 
-# Generate static assets
-RUN pnpm run generate
+# Generate Nuxt types and compile static output directly with npx
+RUN npx nuxt prepare && npx nuxt generate
 
 # Stage 2: Serve the application with Nginx
 FROM nginx:stable-alpine AS production
