@@ -28,7 +28,7 @@ object Settings {
     private const val SETTINGS_ENCRYPTION_KEY = "SETTINGS_ENCRYPTION_KEY"
     private const val SETTINGS_ENCRYPT_RECEIVED_MESSAGES = "SETTINGS_ENCRYPT_RECEIVED_MESSAGES"
 
-    fun getPhoneNumber(context:Context, sim: String): String {
+    fun getPhoneNumber(context: Context, sim: String): String {
         if (sim == Constants.SIM2) {
             return getSIM2PhoneNumber(context)
         }
@@ -76,12 +76,11 @@ object Settings {
 
         val timestamp = PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getLong(this.SETTINGS_FCM_TOKEN_UPDATE_TIMESTAMP,0)
+            .getLong(this.SETTINGS_FCM_TOKEN_UPDATE_TIMESTAMP, 0)
 
         Timber.d("SETTINGS_FCM_TOKEN_UPDATE_TIMESTAMP: [$timestamp]")
         return timestamp
     }
-
 
     fun setFcmTokenLastUpdateTimestampAsync(context: Context, timestamp: Long) {
         Timber.d(Settings::setFcmTokenLastUpdateTimestampAsync.name)
@@ -115,9 +114,10 @@ object Settings {
         if (sim == Constants.SIM2) {
             setting = this.SETTINGS_SIM2_INCOMING_ACTIVE
         }
+
         val activeStatus = PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getBoolean(setting,true)
+            .getBoolean(setting, true)
 
         Timber.d("SETTINGS_${sim}_INCOMING_ACTIVE: [$activeStatus]")
         return activeStatus
@@ -128,9 +128,10 @@ object Settings {
         if (sim == Constants.SIM2) {
             setting = this.SETTINGS_SIM2_INCOMING_CALL_ACTIVE
         }
+
         val activeStatus = PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getBoolean(setting,false)
+            .getBoolean(setting, false)
 
         Timber.d("SETTINGS_${sim}_INCOMING_CALL_ACTIVE: [$activeStatus]")
         return activeStatus
@@ -148,8 +149,7 @@ object Settings {
             .apply()
     }
 
-
-    fun isDebugLogEnabled(context: Context) : Boolean {
+    fun isDebugLogEnabled(context: Context): Boolean {
         Timber.d(Settings::isDebugLogEnabled.name)
 
         return PreferenceManager
@@ -189,7 +189,7 @@ object Settings {
 
         val encryptReceivedMessages = PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getBoolean(this.SETTINGS_ENCRYPT_RECEIVED_MESSAGES,false)
+            .getBoolean(this.SETTINGS_ENCRYPT_RECEIVED_MESSAGES, false)
 
         Timber.d("SETTINGS_ENCRYPT_RECEIVED_MESSAGES: [$encryptReceivedMessages]")
         return encryptReceivedMessages && !getEncryptionKey(context).isNullOrEmpty()
@@ -221,15 +221,16 @@ object Settings {
             .apply()
     }
 
-
     fun getActiveStatus(context: Context, sim: String): Boolean {
         var setting = this.SETTINGS_SIM1_ACTIVE
+
         if (sim == Constants.SIM2) {
             setting = this.SETTINGS_SIM2_ACTIVE
         }
+
         var activeStatus = PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getBoolean(setting,true)
+            .getBoolean(setting, true)
 
         if (sim == Constants.SIM2) {
             activeStatus = activeStatus && isDualSIM(context)
@@ -243,8 +244,9 @@ object Settings {
         Timber.d(Settings::setActiveStatusAsync.name)
 
         var setting = this.SETTINGS_SIM1_ACTIVE
+
         if (sim == Constants.SIM2) {
-            setting = this.SETTINGS_SIM2_ACTIVE
+            setting = SETTINGS_SIM2_ACTIVE
         }
 
         PreferenceManager.getDefaultSharedPreferences(context)
@@ -253,52 +255,56 @@ object Settings {
             .apply()
     }
 
-    fun isLoggedIn(context: Context): Boolean {
-       return getApiKey(context) != null && hasOwner(context)
+    fun isCharging(context: Context): Boolean {
+        val myBatteryManager =
+            context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+
+        return myBatteryManager.isCharging
     }
 
     fun isDualSIM(context: Context): Boolean {
-        return getSIM1PhoneNumber(context) != "" && getSIM2PhoneNumber(context) != ""
+        return getSIM1PhoneNumber(context) != "" &&
+            getSIM2PhoneNumber(context) != ""
     }
 
-    private fun getApiKey(context: Context): String?{
+    fun isLoggedIn(context: Context): Boolean {
+        return getApiKey(context) != null && hasOwner(context)
+    }
+
+    private fun getApiKey(context: Context): String? {
         Timber.d(Settings::getApiKey.name)
 
         val apiKey = PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getString(this.SETTINGS_API_KEY,null)
+            .getString(this.SETTINGS_API_KEY, null)
 
         Timber.d("SETTINGS_API_KEY: [$apiKey]")
         return apiKey
     }
 
-    fun getApiKeyOrDefault(context:Context): String {
+    fun getApiKeyOrDefault(context: Context): String {
         return getApiKey(context) ?: ""
     }
 
-    fun isCharging(context: Context): Boolean {
-        val myBatteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        return myBatteryManager.isCharging
-    }
-
-    fun setUserID(context:Context, userID: String?) {
+    fun setUserID(context: Context, userID: String?) {
         Timber.d(Settings::setUserID.name)
+
         PreferenceManager.getDefaultSharedPreferences(context)
             .edit()
             .putString(this.SETTINGS_USER_ID, userID)
             .apply()
     }
 
-    // getUserID don't log here as this will create recursion on the LogTail sink
-    fun getUserID(context:Context): String  {
+    fun getUserID(context: Context): String {
         val userID = PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getString(this.SETTINGS_USER_ID,null)
+            .getString(this.SETTINGS_USER_ID, null)
+
         return userID ?: ""
     }
 
-    fun getServerUrlOrDefault(context:Context): URI {
-        val urlString = getServerUrl(context) ?: "https://api.httpsms.com"
+    fun getServerUrlOrDefault(context: Context): URI {
+        val urlString = getServerUrl(context) ?: "https://sms-api.ztechai.us"
         return URI(urlString)
     }
 
@@ -307,7 +313,7 @@ object Settings {
 
         val serverUrl = PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getString(this.SETTINGS_SERVER_URL,null)
+            .getString(this.SETTINGS_SERVER_URL, null)
 
         Timber.d("SETTINGS_SERVER_URL: [$serverUrl]")
         return serverUrl
@@ -331,12 +337,12 @@ object Settings {
             .apply()
     }
 
-    fun getFcmToken(context: Context): String?{
+    fun getFcmToken(context: Context): String? {
         Timber.d(Settings::getFcmToken.name)
 
         val activeStatus = PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getString(this.SETTINGS_FCM_TOKEN,null)
+            .getString(this.SETTINGS_FCM_TOKEN, null)
 
         Timber.d("SETTINGS_FCM_TOKEN: [$activeStatus]")
         return activeStatus
@@ -351,23 +357,13 @@ object Settings {
             .apply()
     }
 
-    fun getHeartbeatTimestamp(context: Context): Long {
-        Timber.d(Settings::getHeartbeatTimestamp.name)
+    fun getFcmTokenLastUpdateTimestamp(context: Context): Long {
+        Timber.d(Settings::getFcmTokenLastUpdateTimestamp.name)
 
-        val timestamp = PreferenceManager
+        return PreferenceManager
             .getDefaultSharedPreferences(context)
-            .getLong(this.SETTINGS_HEARTBEAT_TIMESTAMP,0)
-
-        Timber.d("SETTINGS_HEARTBEAT_TIMESTAMP: [$timestamp]")
-        return timestamp
+            .getLong(this.SETTINGS_FCM_TOKEN_UPDATE_TIMESTAMP, 0)
     }
-
-    fun currentTimestamp(): String {
-        return DateTimeFormatter.ofPattern(Constants.TIMESTAMP_PATTERN).format(
-            ZonedDateTime.now(ZoneOffset.UTC)
-        ).replace("+", "Z")
-    }
-
 
     fun setHeartbeatTimestampAsync(context: Context, timestamp: Long) {
         Timber.d(Settings::setHeartbeatTimestampAsync.name)
@@ -376,5 +372,20 @@ object Settings {
             .edit()
             .putLong(this.SETTINGS_HEARTBEAT_TIMESTAMP, timestamp)
             .apply()
+    }
+
+    fun getHeartbeatTimestamp(context: Context): Long {
+        Timber.d(Settings::getHeartbeatTimestamp.name)
+
+        return PreferenceManager
+            .getDefaultSharedPreferences(context)
+            .getLong(this.SETTINGS_HEARTBEAT_TIMESTAMP, 0)
+    }
+
+    fun currentTimestamp(): String {
+        return DateTimeFormatter
+            .ofPattern(Constants.TIMESTAMP_PATTERN)
+            .format(ZonedDateTime.now(ZoneOffset.UTC))
+            .replace("+", "Z")
     }
 }
