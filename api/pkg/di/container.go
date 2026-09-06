@@ -2045,10 +2045,10 @@ func logger(skipFrameCount int) telemetry.Logger {
 }
 
 func logDriver(skipFrameCount int) *zerodriver.Logger {
-	if isLocal() {
-		return consoleLogger(skipFrameCount)
-	}
-	return axiomLogger(skipFrameCount)
+	// Self-hosted deployments should use the local console logger.
+	// Axiom is optional telemetry and must never prevent the API
+	// from starting when AXIOM_TOKEN is not configured.
+	return consoleLogger(skipFrameCount)
 }
 
 func axiomLogger(skipFrameCount int) *zerodriver.Logger {
