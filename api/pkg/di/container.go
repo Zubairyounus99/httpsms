@@ -3,8 +3,6 @@ package di
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,59 +12,74 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/NdoleStudio/httpsms/docs"
+	plunk "github.com/NdoleStudio/plunk-go"
+	"github.com/pusher/pusher-http-go/v5"
+
+	otelMetric "go.opentelemetry.io/otel/metric"
+
+	"github.com/dgraph-io/ristretto/v2"
+
+	otelfiber "github.com/gofiber/contrib/v3/otel"
+	"gorm.io/plugin/opentelemetry/tracing"
+
+	"github.com/NdoleStudio/httpsms/pkg/discord"
+
 	"cloud.google.com/go/storage"
-	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	cloudtrace "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
-	firebase "firebase.google.com/go"
-	"firebase.google.com/go/auth"
-	"github.com/NdoleStudio/httpsms/docs"
 	"github.com/NdoleStudio/httpsms/pkg/cache"
-	"github.com/NdoleStudio/httpsms/pkg/discord"
-	"github.com/NdoleStudio/httpsms/pkg/emails"
-	"github.com/NdoleStudio/httpsms/pkg/entities"
-	"github.com/NdoleStudio/httpsms/pkg/handlers"
-	"github.com/NdoleStudio/httpsms/pkg/listeners"
-	"github.com/NdoleStudio/httpsms/pkg/middlewares"
-	"github.com/NdoleStudio/httpsms/pkg/repositories"
-	"github.com/NdoleStudio/httpsms/pkg/services"
-	"github.com/NdoleStudio/httpsms/pkg/telemetry"
-	"github.com/NdoleStudio/httpsms/pkg/validators"
-	plunk "github.com/NdoleStudio/plunk-go"
-	"github.com/NdoleStudio/stacktrace"
-	"github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
-	"github.com/axiomhq/axiom-go/adapters/zerolog"
-	"github.com/dgraph-io/ristretto/v2"
-	"github.com/gofiber/contrib/v3/otel"
-	swagger "github.com/gofiber/contrib/v3/swaggo"
-	"github.com/gofiber/fiber/v3"
-	fiberLogger "github.com/gofiber/fiber/v3/middleware/logger"
-	"github.com/gofiber/fiber/v3/middleware/compress"
-	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/NdoleStudio/lemonsqueezy-go"
 	"github.com/hashicorp/go-retryablehttp"
-	"github.com/hirosassa/zerodriver"
-	"github.com/lemonSqueezy/lemonsqueezy-go"
-	"github.com/pusher/pusher-http-go/v5"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/sdk/metric"
+
+	"github.com/NdoleStudio/go-otelroundtripper"
+
 	"github.com/uptrace/uptrace-go/uptrace"
+
+	"github.com/NdoleStudio/httpsms/pkg/emails"
+
+	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
+
 	"go.opentelemetry.io/otel"
-	otelMetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
+
+	axiomzerolog "github.com/axiomhq/axiom-go/adapters/zerolog"
+	"github.com/hirosassa/zerodriver"
+	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/sdk/trace"
+
+	firebase "firebase.google.com/go"
+	"firebase.google.com/go/auth"
+	"github.com/NdoleStudio/httpsms/pkg/middlewares"
 	"google.golang.org/api/option"
+
+	"github.com/gofiber/fiber/v3/middleware/compress"
+	"github.com/gofiber/fiber/v3/middleware/cors"
+
+	"github.com/NdoleStudio/httpsms/pkg/entities"
+	"github.com/NdoleStudio/httpsms/pkg/listeners"
+	"github.com/NdoleStudio/httpsms/pkg/repositories"
+	"github.com/NdoleStudio/httpsms/pkg/services"
+	"github.com/NdoleStudio/stacktrace"
+	swagger "github.com/gofiber/contrib/v3/swaggo"
+	"github.com/gofiber/fiber/v3"
+	fiberLogger "github.com/gofiber/fiber/v3/middleware/logger"
+	ttlCache "github.com/patrickmn/go-cache"
+	"gorm.io/gorm"
+
+	"github.com/NdoleStudio/httpsms/pkg/handlers"
+	"github.com/NdoleStudio/httpsms/pkg/telemetry"
+	"github.com/NdoleStudio/httpsms/pkg/validators"
 	mongoDriver "go.mongodb.org/mongo-driver/v2/mongo"
 	"gorm.io/driver/postgres"
 	gormLogger "gorm.io/gorm/logger"
-	"gorm.io/gorm"
-	"gorm.io/plugin/opentelemetry/tracing"
-	ttlCache "github.com/patrickmn/go-cache"
 )
 
 // Container is used to resolve services at runtime
@@ -102,12 +115,6 @@ func NewContainer(projectID string, version string) (container *Container) {
 		logger:    logger(3).WithService(fmt.Sprintf("%T", container)),
 	}
 
-	// External telemetry is optional in self-hosted deployments.
-	// OBSERVABILITY_PROVIDER can be:
-	//   console (default)
-	//   axiom
-	//   uptrace
-	//   google
 	container.InitializeTraceProvider()
 
 	container.RegisterMessageListeners()
@@ -186,8 +193,7 @@ func (container *Container) App() (app *fiber.App) {
 		app.Use(fiberLogger.New())
 	}
 
-	app.Use(otel.Middleware())
-
+	app.Use(otelfiber.Middleware())
 	app.Use(
 		cors.New(
 			cors.Config{
@@ -199,7 +205,6 @@ func (container *Container) App() (app *fiber.App) {
 			},
 		),
 	)
-
 	app.Use(middlewares.HTTPRequestLogger(container.Tracer(), container.Logger()))
 	app.Use(middlewares.BearerAuth(container.Logger(), container.Tracer(), container.FirebaseAuthClient()))
 	app.Use(middlewares.APIKeyAuth(container.Logger(), container.Tracer(), container.UserRepository()))
@@ -229,18 +234,15 @@ func (container *Container) AuthenticatedMiddleware() fiber.Handler {
 // Logger creates a new instance of telemetry.Logger
 func (container *Container) Logger(skipFrameCount ...int) telemetry.Logger {
 	container.logger.Debug("creating telemetry.Logger")
-
 	if len(skipFrameCount) > 0 {
 		return logger(skipFrameCount[0])
 	}
-
 	return logger(3)
 }
 
 // GormLogger creates a new instance of gormLogger.Interface
 func (container *Container) GormLogger() gormLogger.Interface {
 	container.logger.Debug("creating gormLogger.Interface")
-
 	return telemetry.NewGormLogger(
 		container.Tracer(),
 		container.Logger(6),
@@ -254,7 +256,6 @@ func (container *Container) connect(dsn string, config *gorm.Config) (db *gorm.D
 // DedicatedDB creates an instance of gorm.DB if it has not been created already
 func (container *Container) DedicatedDB() (db *gorm.DB) {
 	container.logger.Debug(fmt.Sprintf("creating %T", db))
-
 	if container.dedicatedDB != nil {
 		return container.dedicatedDB
 	}
@@ -262,11 +263,8 @@ func (container *Container) DedicatedDB() (db *gorm.DB) {
 	config := &gorm.Config{
 		TranslateError: true,
 	}
-
 	if isLocal() {
-		config = &gorm.Config{
-			Logger: container.GormLogger(),
-		}
+		config = &gorm.Config{Logger: container.GormLogger()}
 	}
 
 	db, err := container.connect(os.Getenv("DATABASE_URL_DEDICATED"), config)
@@ -279,14 +277,12 @@ func (container *Container) DedicatedDB() (db *gorm.DB) {
 	}
 
 	container.dedicatedDB = db
-
 	if os.Getenv("DATABASE_MIGRATION_SKIP") != "" {
 		container.logger.Debug(fmt.Sprintf("skipping migrations for [%T]", db))
 		return container.dedicatedDB
 	}
 
 	container.logger.Debug(fmt.Sprintf("Running migrations for dedicated [%T]", db))
-
 	if err = db.AutoMigrate(&entities.Heartbeat{}); err != nil {
 		container.logger.Fatal(stacktrace.Propagatef(err, "cannot migrate %T", &entities.Heartbeat{}))
 	}
@@ -312,7 +308,6 @@ func (container *Container) MongoDB() *mongoDriver.Database {
 	}
 
 	container.mongoDB = db
-
 	return container.mongoDB
 }
 
@@ -333,13 +328,11 @@ func (container *Container) DBWithoutMigration() (db *gorm.DB) {
 	if err != nil {
 		container.logger.Fatal(err)
 	}
-
 	container.db = db
 
 	if err = db.Use(tracing.NewPlugin()); err != nil {
 		container.logger.Fatal(stacktrace.Propagatef(err, "cannot use GORM tracing plugin"))
 	}
-
 	return container.db
 }
 
@@ -360,7 +353,6 @@ func (container *Container) DB() (db *gorm.DB) {
 	if err != nil {
 		container.logger.Fatal(err)
 	}
-
 	container.db = db
 
 	if err = db.Use(tracing.NewPlugin()); err != nil {
@@ -374,8 +366,8 @@ func (container *Container) DB() (db *gorm.DB) {
 
 	container.logger.Debug(fmt.Sprintf("Running migrations for %T", db))
 
-	// This prevents a bug in the Gorm AutoMigrate where it tries to delete
-	// non-existent constraints. This is only applicable to PROD on CockroachDB.
+	// This prevents a bug in the Gorm AutoMigrate where it tries to delete this no existent constraints
+	// This is only applicable to PROD on cockroachDB
 	if os.Getenv("DATABASE_MIGRATION_CONSTRAINT_FIX") == "1" {
 		db.Exec(`
 ALTER TABLE users ADD CONSTRAINT IF NOT EXISTS uni_users_api_key CHECK (api_key IS NOT NULL);
@@ -438,27 +430,10 @@ ALTER TABLE discords ADD CONSTRAINT IF NOT EXISTS uni_discords_server_id CHECK (
 func (container *Container) FirebaseApp() (app *firebase.App) {
 	container.logger.Debug(fmt.Sprintf("creating %T", app))
 
-	credentials := container.FirebaseCredentials()
-
-	if len(credentials) == 0 {
-		container.logger.Fatal(stacktrace.NewErrorf(
-			"FIREBASE_CREDENTIALS is empty; provide Firebase service-account JSON or base64-encoded JSON",
-		))
-	}
-
-	app, err := firebase.NewApp(
-		context.Background(),
-		nil,
-		option.WithCredentialsJSON(credentials),
-	)
-
+	app, err := firebase.NewApp(context.Background(), nil, option.WithCredentialsJSON(container.FirebaseCredentials()))
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot initialize firebase application; verify FIREBASE_CREDENTIALS contains valid Firebase service-account JSON",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot initialize firebase application"))
 	}
-
 	return app
 }
 
@@ -467,28 +442,19 @@ func (container *Container) InMemoryCache() cache.Cache {
 	if container.inMemoryCache != nil {
 		return container.inMemoryCache
 	}
-
 	container.logger.Debug("creating an in memory cache")
-
 	c := ttlCache.New(time.Hour, time.Hour*2)
 	container.inMemoryCache = cache.NewMemoryCache(container.Tracer(), c)
-
 	return container.inMemoryCache
 }
 
 // Cache creates a new instance of cache.Cache
 func (container *Container) Cache() cache.Cache {
 	container.logger.Debug("creating cache.Cache")
-
 	opt, err := redis.ParseURL(os.Getenv("REDIS_URL"))
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot parse redis url [%s]",
-			os.Getenv("REDIS_URL"),
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot parse redis url [%s]", os.Getenv("REDIS_URL")))
 	}
-
 	if strings.HasPrefix(os.Getenv("REDIS_URL"), "rediss://") {
 		opt.TLSConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
@@ -497,18 +463,14 @@ func (container *Container) Cache() cache.Cache {
 
 	redisClient := redis.NewClient(opt)
 
+	// Enable tracing instrumentation.
 	if err = redisotel.InstrumentTracing(redisClient); err != nil {
-		container.logger.Error(stacktrace.Propagatef(
-			err,
-			"cannot instrument redis tracing",
-		))
+		container.logger.Error(stacktrace.Propagatef(err, "cannot instrument redis tracing"))
 	}
 
+	// Enable metrics instrumentation.
 	if err = redisotel.InstrumentMetrics(redisClient); err != nil {
-		container.logger.Error(stacktrace.Propagatef(
-			err,
-			"cannot instrument redis metrics",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot instrument redis metrics"))
 	}
 
 	return cache.NewRedisCache(container.Tracer(), redisClient)
@@ -517,15 +479,10 @@ func (container *Container) Cache() cache.Cache {
 // FirebaseAuthClient creates a new instance of auth.Client
 func (container *Container) FirebaseAuthClient() (client *auth.Client) {
 	container.logger.Debug(fmt.Sprintf("creating %T", client))
-
 	authClient, err := container.FirebaseApp().Auth(context.Background())
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot initialize firebase auth client",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot initialize firebase auth client"))
 	}
-
 	return authClient
 }
 
@@ -533,16 +490,9 @@ func (container *Container) FirebaseAuthClient() (client *auth.Client) {
 func (container *Container) CloudTasksClient() (client *cloudtasks.Client) {
 	container.logger.Debug(fmt.Sprintf("creating %T", client))
 
-	client, err := cloudtasks.NewClient(
-		context.Background(),
-		option.WithCredentialsJSON(container.FirebaseCredentials()),
-	)
-
+	client, err := cloudtasks.NewClient(context.Background(), option.WithCredentialsJSON(container.FirebaseCredentials()))
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot initialize cloud tasks client",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot initialize cloud tasks client"))
 	}
 
 	return client
@@ -574,7 +524,6 @@ func (container *Container) EventsQueue() (queue services.PushQueue) {
 // EmulatorEventsQueue creates an in process instance of events services.PushQueue
 func (container *Container) EmulatorEventsQueue() (queue services.PushQueue) {
 	container.logger.Debug("creating emulator events services.PushQueue")
-
 	return services.EmulatorPushQueue(
 		container.Logger(),
 		container.Tracer(),
@@ -586,7 +535,6 @@ func (container *Container) EmulatorEventsQueue() (queue services.PushQueue) {
 // CloudTaskEventsQueue creates a Google cloud task instance of events services.PushQueue
 func (container *Container) CloudTaskEventsQueue() (queue services.PushQueue) {
 	container.logger.Debug("creating cloud task events services.PushQueue")
-
 	return services.NewGooglePushQueue(
 		container.Logger(),
 		container.Tracer(),
@@ -596,13 +544,12 @@ func (container *Container) CloudTaskEventsQueue() (queue services.PushQueue) {
 }
 
 // FCMClient creates the appropriate FCM client based on configuration.
+// When FCM_ENDPOINT is set, it returns an EmulatorFCMClient that sends
+// notifications directly to the phone emulator via HTTP.
+// Otherwise, it returns a FirebaseFCMClient that uses the real Firebase SDK.
 func (container *Container) FCMClient() services.FCMClient {
 	if fcmEndpoint := os.Getenv("FCM_ENDPOINT"); fcmEndpoint != "" {
-		container.logger.Info(fmt.Sprintf(
-			"using emulator FCM client with endpoint: %s",
-			fcmEndpoint,
-		))
-
+		container.logger.Info(fmt.Sprintf("using emulator FCM client with endpoint: %s", fcmEndpoint))
 		return services.NewEmulatorFCMClient(
 			container.HTTPClient("emulator_fcm"),
 			fcmEndpoint,
@@ -611,15 +558,10 @@ func (container *Container) FCMClient() services.FCMClient {
 	}
 
 	container.logger.Debug("creating FirebaseFCMClient")
-
 	messagingClient, err := container.FirebaseApp().Messaging(context.Background())
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot initialize firebase messaging client",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot initialize firebase messaging client"))
 	}
-
 	return services.NewFirebaseFCMClient(messagingClient)
 }
 
@@ -641,71 +583,15 @@ func (container *Container) PhoneNotificationClients() map[entities.Notification
 	}
 }
 
-// FirebaseCredentials returns Firebase service-account credentials as bytes.
-//
-// Supported formats:
-//
-// 1. Normal JSON:
-//    {"type":"service_account", ...}
-//
-// 2. Escaped JSON:
-//    {\"type\":\"service_account\", ...}
-//
-// 3. Base64-encoded JSON.
-//
-// Base64 is recommended for Docker/Dokploy because it avoids multiline,
-// quotation and newline problems in environment variables.
+// FirebaseCredentials returns firebase credentials as bytes.
 func (container *Container) FirebaseCredentials() []byte {
 	container.logger.Debug("creating firebase credentials")
-
-	raw := strings.TrimSpace(os.Getenv("FIREBASE_CREDENTIALS"))
-
-	if raw == "" {
-		return nil
-	}
-
-	// First attempt: normal JSON.
-	if json.Valid([]byte(raw)) {
-		return []byte(raw)
-	}
-
-	// Second attempt: common escaped JSON format.
-	// Example:
-	// {\"type\":\"service_account\",\"project_id\":\"...\"}
-	escaped := strings.ReplaceAll(raw, `\"`, `"`)
-	if json.Valid([]byte(escaped)) {
-		return []byte(escaped)
-	}
-
-	// Third attempt: base64-encoded JSON.
-	decoded, err := base64.StdEncoding.DecodeString(raw)
-	if err == nil {
-		decoded = []byte(strings.TrimSpace(string(decoded)))
-
-		if json.Valid(decoded) {
-			return decoded
-		}
-	}
-
-	// Fourth attempt: URL-safe base64 without padding.
-	decodedRaw, err := base64.RawStdEncoding.DecodeString(raw)
-	if err == nil {
-		decodedRaw = []byte(strings.TrimSpace(string(decodedRaw)))
-
-		if json.Valid(decodedRaw) {
-			return decodedRaw
-		}
-	}
-
-	// Return the original value so Firebase produces its normal parsing
-	// error. The actual credential contents are never written to logs.
-	return []byte(raw)
+	return []byte(os.Getenv("FIREBASE_CREDENTIALS"))
 }
 
 // Tracer creates a new instance of telemetry.Tracer
 func (container *Container) Tracer() (t telemetry.Tracer) {
 	container.logger.Debug("creating telemetry.Tracer")
-
 	return telemetry.NewOtelLogger(
 		container.projectID,
 		container.Logger(),
@@ -715,7 +601,6 @@ func (container *Container) Tracer() (t telemetry.Tracer) {
 // MessageHandlerValidator creates a new instance of validators.MessageHandlerValidator
 func (container *Container) MessageHandlerValidator() (validator *validators.MessageHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewMessageHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -727,7 +612,6 @@ func (container *Container) MessageHandlerValidator() (validator *validators.Mes
 // TurnstileTokenValidator creates a new instance of validators.TurnstileTokenValidator
 func (container *Container) TurnstileTokenValidator() (validator *validators.TurnstileTokenValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewTurnstileTokenValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -739,7 +623,6 @@ func (container *Container) TurnstileTokenValidator() (validator *validators.Tur
 // BulkMessageHandlerValidator creates a new instance of validators.BulkMessageHandlerValidator
 func (container *Container) BulkMessageHandlerValidator() (validator *validators.BulkMessageHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewBulkMessageHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -751,7 +634,6 @@ func (container *Container) BulkMessageHandlerValidator() (validator *validators
 // HeartbeatHandler creates a new instance of handlers.HeartbeatHandler
 func (container *Container) HeartbeatHandler() (h *handlers.HeartbeatHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", h))
-
 	return handlers.NewHeartbeatHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -763,7 +645,6 @@ func (container *Container) HeartbeatHandler() (h *handlers.HeartbeatHandler) {
 // BillingHandler creates a new instance of handlers.BillingHandler
 func (container *Container) BillingHandler() (h *handlers.BillingHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", h))
-
 	return handlers.NewBillingHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -775,7 +656,6 @@ func (container *Container) BillingHandler() (h *handlers.BillingHandler) {
 // WebhookHandler creates a new instance of handlers.WebhookHandler
 func (container *Container) WebhookHandler() (h *handlers.WebhookHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", h))
-
 	return handlers.NewWebhookHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -787,7 +667,6 @@ func (container *Container) WebhookHandler() (h *handlers.WebhookHandler) {
 // HeartbeatHandlerValidator creates a new instance of validators.HeartbeatHandlerValidator
 func (container *Container) HeartbeatHandlerValidator() (validator *validators.HeartbeatHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewHeartbeatHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -797,7 +676,6 @@ func (container *Container) HeartbeatHandlerValidator() (validator *validators.H
 // BillingHandlerValidator creates a new instance of validators.BillingHandlerValidator
 func (container *Container) BillingHandlerValidator() (validator *validators.BillingHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewBillingHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -807,7 +685,6 @@ func (container *Container) BillingHandlerValidator() (validator *validators.Bil
 // DiscordHandlerValidator creates a new instance of validators.DiscordHandlerValidator
 func (container *Container) DiscordHandlerValidator() (validator *validators.DiscordHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewDiscordHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -818,7 +695,6 @@ func (container *Container) DiscordHandlerValidator() (validator *validators.Dis
 // WebhookHandlerValidator creates a new instance of validators.WebhookHandlerValidator
 func (container *Container) WebhookHandlerValidator() (validator *validators.WebhookHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewWebhookHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -829,7 +705,6 @@ func (container *Container) WebhookHandlerValidator() (validator *validators.Web
 // MessageThreadHandler creates a new instance of handlers.MessageThreadHandler
 func (container *Container) MessageThreadHandler() (h *handlers.MessageThreadHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", h))
-
 	return handlers.NewMessageThreadHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -841,7 +716,6 @@ func (container *Container) MessageThreadHandler() (h *handlers.MessageThreadHan
 // MessageThreadHandlerValidator creates a new instance of validators.MessageThreadHandlerValidator
 func (container *Container) MessageThreadHandlerValidator() (validator *validators.MessageThreadHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewMessageThreadHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -851,7 +725,6 @@ func (container *Container) MessageThreadHandlerValidator() (validator *validato
 // ContactHandlerValidator creates a new instance of validators.ContactHandlerValidator
 func (container *Container) ContactHandlerValidator() (validator *validators.ContactHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewContactHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -861,7 +734,6 @@ func (container *Container) ContactHandlerValidator() (validator *validators.Con
 // ContactHandler creates a new instance of handlers.ContactHandler
 func (container *Container) ContactHandler() (h *handlers.ContactHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", h))
-
 	return handlers.NewContactHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -874,7 +746,6 @@ func (container *Container) ContactHandler() (h *handlers.ContactHandler) {
 // PhoneHandlerValidator creates a new instance of validators.PhoneHandlerValidator
 func (container *Container) PhoneHandlerValidator() (validator *validators.PhoneHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewPhoneHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -885,7 +756,6 @@ func (container *Container) PhoneHandlerValidator() (validator *validators.Phone
 // UserHandlerValidator creates a new instance of validators.UserHandlerValidator
 func (container *Container) UserHandlerValidator() (validator *validators.UserHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewUserHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -900,57 +770,35 @@ func (container *Container) EventDispatcher() (dispatcher *services.EventDispatc
 	}
 
 	container.logger.Debug(fmt.Sprintf("creating %T", dispatcher))
-
 	dispatcher = services.NewEventDispatcher(
 		container.Logger(),
 		container.Tracer(),
-		container.Float64Histogram(
-			"event.publisher.duration",
-			"ms",
-			"measures the duration of processing CloudEvents",
-		),
+		container.Float64Histogram("event.publisher.duration", "ms", "measures the duration of processing CloudEvents"),
 		container.EventsQueue(),
 		container.EventsQueueConfiguration(),
 	)
 
 	container.eventDispatcher = dispatcher
-
 	return dispatcher
 }
 
 // Float64Histogram creates a new instance of metric.Float64Histogram
-func (container *Container) Float64Histogram(
-	name,
-	unit,
-	description string,
-) otelMetric.Float64Histogram {
+func (container *Container) Float64Histogram(name, unit, description string) otelMetric.Float64Histogram {
 	container.logger.Debug("creating GORM repositories.MessageRepository")
-
 	meter := otel.GetMeterProvider().Meter(
 		container.projectID,
 		otelMetric.WithInstrumentationVersion(otel.Version()),
 	)
-
-	histogram, err := meter.Float64Histogram(
-		name,
-		otelMetric.WithUnit(unit),
-		otelMetric.WithDescription(description),
-	)
-
+	histogram, err := meter.Float64Histogram(name, otelMetric.WithUnit(unit), otelMetric.WithDescription(description))
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot create float64 histogram",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot create float64 histogram"))
 	}
-
 	return histogram
 }
 
 // MessageRepository creates a new instance of repositories.MessageRepository
 func (container *Container) MessageRepository() (repository repositories.MessageRepository) {
 	container.logger.Debug("creating GORM repositories.MessageRepository")
-
 	return repositories.NewGormMessageRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -961,7 +809,6 @@ func (container *Container) MessageRepository() (repository repositories.Message
 // PhoneAPIKeyRepository creates a new instance of repositories.PhoneAPIKeyRepository
 func (container *Container) PhoneAPIKeyRepository() (repository repositories.PhoneAPIKeyRepository) {
 	container.logger.Debug("creating GORM repositories.PhoneAPIKeyRepository")
-
 	return repositories.NewGormPhoneAPIKeyRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -973,7 +820,6 @@ func (container *Container) PhoneAPIKeyRepository() (repository repositories.Pho
 // Integration3CXRepository creates a new instance of repositories.Integration3CxRepository
 func (container *Container) Integration3CXRepository() (repository repositories.Integration3CxRepository) {
 	container.logger.Debug("creating GORM repositories.Integration3CxRepository")
-
 	return repositories.NewGormIntegration3CXRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -984,7 +830,6 @@ func (container *Container) Integration3CXRepository() (repository repositories.
 // PhoneRepository creates a new instance of repositories.PhoneRepository
 func (container *Container) PhoneRepository() (repository repositories.PhoneRepository) {
 	container.logger.Debug("creating GORM repositories.PhoneRepository")
-
 	return repositories.NewGormPhoneRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -996,7 +841,6 @@ func (container *Container) PhoneRepository() (repository repositories.PhoneRepo
 // MessageSendScheduleRepository creates a new instance of repositories.MessageSendScheduleRepository
 func (container *Container) MessageSendScheduleRepository() repositories.MessageSendScheduleRepository {
 	container.logger.Debug("creating GORM repositories.MessageSendScheduleRepository")
-
 	return repositories.NewGormMessageSendScheduleRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -1007,7 +851,6 @@ func (container *Container) MessageSendScheduleRepository() repositories.Message
 // MessageSendScheduleService creates a new instance of services.MessageSendScheduleService
 func (container *Container) MessageSendScheduleService() *services.MessageSendScheduleService {
 	container.logger.Debug("creating services.MessageSendScheduleService")
-
 	return services.NewMessageSendScheduleService(
 		container.Logger(),
 		container.Tracer(),
@@ -1019,7 +862,6 @@ func (container *Container) MessageSendScheduleService() *services.MessageSendSc
 // MessageSendScheduleHandlerValidator creates a new instance of validators.MessageSendScheduleHandlerValidator
 func (container *Container) MessageSendScheduleHandlerValidator() *validators.MessageSendScheduleHandlerValidator {
 	container.logger.Debug("creating validators.MessageSendScheduleHandlerValidator")
-
 	return validators.NewMessageSendScheduleHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -1029,7 +871,6 @@ func (container *Container) MessageSendScheduleHandlerValidator() *validators.Me
 // MessageSendScheduleHandler creates a new instance of handlers.MessageSendScheduleHandler
 func (container *Container) MessageSendScheduleHandler() *handlers.MessageSendScheduleHandler {
 	container.logger.Debug("creating handlers.MessageSendScheduleHandler")
-
 	return handlers.NewMessageSendScheduleHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -1042,7 +883,6 @@ func (container *Container) MessageSendScheduleHandler() *handlers.MessageSendSc
 // BillingUsageRepository creates a new instance of repositories.BillingUsageRepository
 func (container *Container) BillingUsageRepository() (repository repositories.BillingUsageRepository) {
 	container.logger.Debug("creating GORM repositories.BillingUsageRepository")
-
 	return repositories.NewGormBillingUsageRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -1053,7 +893,6 @@ func (container *Container) BillingUsageRepository() (repository repositories.Bi
 // EntitlementService creates a new instance of services.EntitlementService
 func (container *Container) EntitlementService() *services.EntitlementService {
 	container.logger.Debug("creating services.EntitlementService")
-
 	return services.NewEntitlementService(
 		container.Logger(),
 		container.Tracer(),
@@ -1065,7 +904,6 @@ func (container *Container) EntitlementService() *services.EntitlementService {
 // DiscordRepository creates a new instance of repositories.DiscordRepository
 func (container *Container) DiscordRepository() (repository repositories.DiscordRepository) {
 	container.logger.Debug("creating GORM repositories.DiscordRepository")
-
 	return repositories.NewGormDiscordRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -1076,7 +914,6 @@ func (container *Container) DiscordRepository() (repository repositories.Discord
 // WebhookRepository creates a new instance of repositories.WebhookRepository
 func (container *Container) WebhookRepository() (repository repositories.WebhookRepository) {
 	container.logger.Debug("creating GORM repositories.WebhookRepository")
-
 	return repositories.NewGormWebhookRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -1087,7 +924,6 @@ func (container *Container) WebhookRepository() (repository repositories.Webhook
 // PhoneNotificationRepository creates a new instance of repositories.PhoneNotificationRepository
 func (container *Container) PhoneNotificationRepository() (repository repositories.PhoneNotificationRepository) {
 	container.logger.Debug("creating GORM repositories.PhoneNotificationRepository")
-
 	return repositories.NewGormPhoneNotificationRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -1096,9 +932,8 @@ func (container *Container) PhoneNotificationRepository() (repository repositori
 }
 
 // MessageThreadRepository creates a new instance of repositories.MessageThreadRepository
-func (container *Container) MessageThreadRepository() repositories.MessageThreadRepository {
+func (container *Container) MessageThreadRepository() (repository repositories.MessageThreadRepository) {
 	container.logger.Debug("creating GORM repositories.MessageThreadRepository")
-
 	return repositories.NewGormMessageThreadRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -1107,20 +942,17 @@ func (container *Container) MessageThreadRepository() repositories.MessageThread
 }
 
 // ContactRepository creates a new instance of repositories.ContactRepository
-func (container *Container) ContactRepository() repositories.ContactRepository {
+func (container *Container) ContactRepository() (repository repositories.ContactRepository) {
 	switch os.Getenv("CONTACT_DB_BACKEND") {
 	case "mongodb":
 		container.logger.Debug("creating MongoDB repositories.ContactRepository")
-
 		return repositories.NewMongoContactRepository(
 			container.Logger(),
 			container.Tracer(),
 			container.MongoDB(),
 		)
-
 	default:
 		container.logger.Debug("creating GORM repositories.ContactRepository")
-
 		return repositories.NewGormContactRepository(
 			container.Logger(),
 			container.Tracer(),
@@ -1130,20 +962,17 @@ func (container *Container) ContactRepository() repositories.ContactRepository {
 }
 
 // HeartbeatMonitorRepository creates a new instance of repositories.HeartbeatMonitorRepository
-func (container *Container) HeartbeatMonitorRepository() repositories.HeartbeatMonitorRepository {
+func (container *Container) HeartbeatMonitorRepository() (repository repositories.HeartbeatMonitorRepository) {
 	switch os.Getenv("HEARTBEAT_DB_BACKEND") {
 	case "mongodb":
 		container.logger.Debug("creating MongoDB repositories.HeartbeatMonitorRepository")
-
 		return repositories.NewMongoHeartbeatMonitorRepository(
 			container.Logger(),
 			container.Tracer(),
 			container.MongoDB(),
 		)
-
 	default:
 		container.logger.Debug("creating GORM repositories.HeartbeatMonitorRepository")
-
 		return repositories.NewGormHeartbeatMonitorRepository(
 			container.Logger(),
 			container.Tracer(),
@@ -1155,7 +984,6 @@ func (container *Container) HeartbeatMonitorRepository() repositories.HeartbeatM
 // HeartbeatService creates a new instance of services.HeartbeatService
 func (container *Container) HeartbeatService() (service *services.HeartbeatService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewHeartbeatService(
 		container.Logger(),
 		container.Tracer(),
@@ -1168,7 +996,6 @@ func (container *Container) HeartbeatService() (service *services.HeartbeatServi
 // BillingService creates a new instance of services.BillingService
 func (container *Container) BillingService() (service *services.BillingService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewBillingService(
 		container.Logger(),
 		container.Tracer(),
@@ -1183,7 +1010,6 @@ func (container *Container) BillingService() (service *services.BillingService) 
 // DiscordService creates a new instance of services.DiscordService
 func (container *Container) DiscordService() (service *services.DiscordService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewDiscordService(
 		container.Logger(),
 		container.Tracer(),
@@ -1196,7 +1022,6 @@ func (container *Container) DiscordService() (service *services.DiscordService) 
 // WebhookService creates a new instance of services.WebhookService
 func (container *Container) WebhookService() (service *services.WebhookService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewWebhookService(
 		container.Logger(),
 		container.Tracer(),
@@ -1212,7 +1037,6 @@ func (container *Container) WebhookService() (service *services.WebhookService) 
 // Integration3CXService creates a new instance of services.Integration3CXService
 func (container *Container) Integration3CXService() (service *services.Integration3CXService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewIntegration3CXService(
 		container.Logger(),
 		container.Tracer(),
@@ -1224,7 +1048,6 @@ func (container *Container) Integration3CXService() (service *services.Integrati
 // HTTPClient creates a new http.Client
 func (container *Container) HTTPClient(name string) *http.Client {
 	container.logger.Debug(fmt.Sprintf("creating %s %T", name, http.DefaultClient))
-
 	return &http.Client{
 		Timeout:   60 * time.Second,
 		Transport: container.HTTPRoundTripper(name),
@@ -1233,12 +1056,7 @@ func (container *Container) HTTPClient(name string) *http.Client {
 
 // HTTPRoundTripper creates an open telemetry http.RoundTripper
 func (container *Container) HTTPRoundTripper(name string) http.RoundTripper {
-	container.logger.Debug(fmt.Sprintf(
-		"Debug: initializing %s %T",
-		name,
-		http.DefaultTransport,
-	))
-
+	container.logger.Debug(fmt.Sprintf("Debug: initializing %s %T", name, http.DefaultTransport))
 	return otelroundtripper.New(
 		otelroundtripper.WithName(name),
 		otelroundtripper.WithParent(container.RetryHTTPRoundTripper()),
@@ -1248,12 +1066,7 @@ func (container *Container) HTTPRoundTripper(name string) http.RoundTripper {
 
 // HTTPRoundTripperWithoutRetry creates an open telemetry http.RoundTripper without retry
 func (container *Container) HTTPRoundTripperWithoutRetry(name string) http.RoundTripper {
-	container.logger.Debug(fmt.Sprintf(
-		"Debug: initializing %s %T",
-		name,
-		http.DefaultTransport,
-	))
-
+	container.logger.Debug(fmt.Sprintf("Debug: initializing %s %T", name, http.DefaultTransport))
 	return otelroundtripper.New(
 		otelroundtripper.WithName(name),
 		otelroundtripper.WithMeter(otel.GetMeterProvider().Meter(container.projectID)),
@@ -1273,22 +1086,16 @@ func (container *Container) OtelResources(version string, namespace string) *res
 
 // RetryHTTPRoundTripper creates a retryable http.RoundTripper
 func (container *Container) RetryHTTPRoundTripper() http.RoundTripper {
-	container.logger.Debug(fmt.Sprintf(
-		"initializing retry %T",
-		http.DefaultTransport,
-	))
-
+	container.logger.Debug(fmt.Sprintf("initializing retry %T", http.DefaultTransport))
 	retryClient := retryablehttp.NewClient()
 	retryClient.Logger = container.Logger()
 	retryClient.RetryMax = 2
-
 	return retryClient.StandardClient().Transport
 }
 
 // PhoneService creates a new instance of services.PhoneService
 func (container *Container) PhoneService() (service *services.PhoneService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewPhoneService(
 		container.Logger(),
 		container.Tracer(),
@@ -1300,7 +1107,6 @@ func (container *Container) PhoneService() (service *services.PhoneService) {
 // MarketingService creates a new instance of services.MarketingService
 func (container *Container) MarketingService() (service *services.MarketingService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewMarketingService(
 		container.Logger(),
 		container.Tracer(),
@@ -1312,7 +1118,6 @@ func (container *Container) MarketingService() (service *services.MarketingServi
 // UserService creates a new instance of services.UserService
 func (container *Container) UserService() (service *services.UserService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewUserService(
 		container.Logger(),
 		container.Tracer(),
@@ -1329,7 +1134,6 @@ func (container *Container) UserService() (service *services.UserService) {
 // Mailer creates a new instance of emails.Mailer
 func (container *Container) Mailer() (mailer emails.Mailer) {
 	container.logger.Debug("creating emails.Mailer")
-
 	return emails.NewSMTPEmailService(
 		container.Tracer(),
 		emails.SMTPConfig{
@@ -1346,7 +1150,6 @@ func (container *Container) Mailer() (mailer emails.Mailer) {
 // UserEmailFactory creates a new instance of emails.UserEmailFactory
 func (container *Container) UserEmailFactory() (factory emails.UserEmailFactory) {
 	container.logger.Debug("creating emails.UserEmailFactory")
-
 	return emails.NewHermesUserEmailFactory(&emails.HermesGeneratorConfig{
 		AppURL:     os.Getenv("APP_URL"),
 		AppName:    os.Getenv("APP_NAME"),
@@ -1357,7 +1160,6 @@ func (container *Container) UserEmailFactory() (factory emails.UserEmailFactory)
 // NotificationEmailFactory creates a new instance of emails.NotificationEmailFactory
 func (container *Container) NotificationEmailFactory() (factory emails.NotificationEmailFactory) {
 	container.logger.Debug("creating emails.UserEmailFactory")
-
 	return emails.NewHermesNotificationEmailFactory(&emails.HermesGeneratorConfig{
 		AppURL:     os.Getenv("APP_URL"),
 		AppName:    os.Getenv("APP_NAME"),
@@ -1368,7 +1170,6 @@ func (container *Container) NotificationEmailFactory() (factory emails.Notificat
 // MessageThreadService creates a new instance of services.MessageService
 func (container *Container) MessageThreadService() (service *services.MessageThreadService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewMessageThreadService(
 		container.Logger(),
 		container.Tracer(),
@@ -1384,23 +1185,19 @@ func (container *Container) ContactService() (service *services.ContactService) 
 	if container.contactService != nil {
 		return container.contactService
 	}
-
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	container.contactService = services.NewContactService(
 		container.Logger(),
 		container.Tracer(),
 		container.ContactRepository(),
 		container.ContactRistrettoCache(),
 	)
-
 	return container.contactService
 }
 
 // EmailNotificationService creates a new instance of services.EmailNotificationService
 func (container *Container) EmailNotificationService() (service *services.EmailNotificationService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewEmailNotificationService(
 		container.Logger(),
 		container.Tracer(),
@@ -1414,7 +1211,6 @@ func (container *Container) EmailNotificationService() (service *services.EmailN
 // MessageHandler creates a new instance of handlers.MessageHandler
 func (container *Container) MessageHandler() (handler *handlers.MessageHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", handler))
-
 	return handlers.NewMessageHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -1427,7 +1223,6 @@ func (container *Container) MessageHandler() (handler *handlers.MessageHandler) 
 // BulkMessageHandler creates a new instance of handlers.BulkMessageHandler
 func (container *Container) BulkMessageHandler() (handler *handlers.BulkMessageHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", handler))
-
 	return handlers.NewBulkMessageHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -1440,7 +1235,6 @@ func (container *Container) BulkMessageHandler() (handler *handlers.BulkMessageH
 // UserHandler creates a new instance of handlers.MessageHandler
 func (container *Container) UserHandler() (handler *handlers.UserHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", handler))
-
 	return handlers.NewUserHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -1452,7 +1246,6 @@ func (container *Container) UserHandler() (handler *handlers.UserHandler) {
 // PhoneHandler creates a new instance of handlers.PhoneHandler
 func (container *Container) PhoneHandler() (handler *handlers.PhoneHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", handler))
-
 	return handlers.NewPhoneHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -1475,11 +1268,7 @@ func (container *Container) EventsHandler() (handler *handlers.EventsHandler) {
 
 // RegisterMessageListeners registers event listeners for listeners.MessageListener
 func (container *Container) RegisterMessageListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listners for %T",
-		listeners.MessageListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listners for %T", listeners.MessageListener{}))
 	_, routes := listeners.NewMessageListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1493,11 +1282,7 @@ func (container *Container) RegisterMessageListeners() {
 
 // RegisterMessageSendScheduleListeners registers event listeners for listeners.MessageSendScheduleListener
 func (container *Container) RegisterMessageSendScheduleListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.MessageSendScheduleListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.MessageSendScheduleListener{}))
 	_, routes := listeners.NewMessageSendScheduleListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1512,7 +1297,6 @@ func (container *Container) RegisterMessageSendScheduleListeners() {
 // LemonsqueezyService creates a new instance of services.LemonsqueezyService
 func (container *Container) LemonsqueezyService() (service *services.LemonsqueezyService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewLemonsqueezyService(
 		container.Logger(),
 		container.Tracer(),
@@ -1576,7 +1360,6 @@ func (container *Container) DiscordHandler() (handler *handlers.DiscordHandler) 
 // LemonsqueezyHandlerValidator creates a new instance of validators.LemonsqueezyHandlerValidator
 func (container *Container) LemonsqueezyHandlerValidator() (validator *validators.LemonsqueezyHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewLemonsqueezyHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -1587,7 +1370,6 @@ func (container *Container) LemonsqueezyHandlerValidator() (validator *validator
 // PhoneAPIKeyHandlerValidator creates a new instance of validators.PhoneAPIKeyHandlerValidator
 func (container *Container) PhoneAPIKeyHandlerValidator() (validator *validators.PhoneAPIKeyHandlerValidator) {
 	container.logger.Debug(fmt.Sprintf("creating %T", validator))
-
 	return validators.NewPhoneAPIKeyHandlerValidator(
 		container.Logger(),
 		container.Tracer(),
@@ -1597,7 +1379,6 @@ func (container *Container) PhoneAPIKeyHandlerValidator() (validator *validators
 // LemonsqueezyClient creates a new instance of lemonsqueezy.Client
 func (container *Container) LemonsqueezyClient() (client *lemonsqueezy.Client) {
 	container.logger.Debug(fmt.Sprintf("creating %T", client))
-
 	return lemonsqueezy.New(
 		lemonsqueezy.WithHTTPClient(container.HTTPClient("lemonsqueezy")),
 		lemonsqueezy.WithAPIKey(os.Getenv("LEMONSQUEEZY_API_KEY")),
@@ -1608,7 +1389,6 @@ func (container *Container) LemonsqueezyClient() (client *lemonsqueezy.Client) {
 // PusherClient creates a new instance of pusher.Client
 func (container *Container) PusherClient() (client *pusher.Client) {
 	container.logger.Debug(fmt.Sprintf("creating %T", client))
-
 	return &pusher.Client{
 		AppID:   os.Getenv("PUSHER_APP_ID"),
 		Key:     os.Getenv("PUSHER_KEY"),
@@ -1621,7 +1401,6 @@ func (container *Container) PusherClient() (client *pusher.Client) {
 // DiscordClient creates a new instance of discord.Client
 func (container *Container) DiscordClient() (client *discord.Client) {
 	container.logger.Debug(fmt.Sprintf("creating %T", client))
-
 	return discord.New(
 		discord.WithHTTPClient(container.HTTPClient("discord")),
 		discord.WithApplicationID(os.Getenv("DISCORD_APPLICATION_ID")),
@@ -1632,7 +1411,6 @@ func (container *Container) DiscordClient() (client *discord.Client) {
 // PlunkClient creates a new instance of plunk.Client
 func (container *Container) PlunkClient() (client *plunk.Client) {
 	container.logger.Debug(fmt.Sprintf("creating %T", client))
-
 	return plunk.New(
 		plunk.WithHTTPClient(container.HTTPClient("plunk")),
 		plunk.WithSecretKey(os.Getenv("PLUNK_SECRET_KEY")),
@@ -1642,61 +1420,31 @@ func (container *Container) PlunkClient() (client *plunk.Client) {
 
 // RegisterLemonsqueezyRoutes registers routes for the /lemonsqueezy prefix
 func (container *Container) RegisterLemonsqueezyRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.LemonsqueezyHandler{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.LemonsqueezyHandler{}))
 	container.LemonsqueezyHandler().RegisterRoutes(container.App())
 }
 
 // RegisterIntegration3CXRoutes registers routes for the /integration/3cx prefix
 func (container *Container) RegisterIntegration3CXRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering [%T] routes",
-		&handlers.Integration3CXHandler{},
-	))
-
-	container.Integration3CXHandler().RegisterRoutes(
-		container.App(),
-		container.BearerAPIKeyMiddleware(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering [%T] routes", &handlers.Integration3CXHandler{}))
+	container.Integration3CXHandler().RegisterRoutes(container.App(), container.BearerAPIKeyMiddleware(), container.AuthenticatedMiddleware())
 }
 
 // RegisterPhoneAPIKeyRoutes registers routes for the /phone-api-key prefix
 func (container *Container) RegisterPhoneAPIKeyRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering [%T] routes",
-		&handlers.Integration3CXHandler{},
-	))
-
-	container.PhoneAPIKeyHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering [%T] routes", &handlers.Integration3CXHandler{}))
+	container.PhoneAPIKeyHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterDiscordRoutes registers routes for the /discord prefix
 func (container *Container) RegisterDiscordRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.DiscordHandler{},
-	))
-
-	container.DiscordHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.DiscordHandler{}))
+	container.DiscordHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterMessageThreadListeners registers event listeners for listeners.MessageThreadListener
 func (container *Container) RegisterMessageThreadListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listners for %T",
-		listeners.MessageThreadListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listners for %T", listeners.MessageThreadListener{}))
 	_, routes := listeners.NewMessageThreadListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1710,11 +1458,7 @@ func (container *Container) RegisterMessageThreadListeners() {
 
 // RegisterContactListeners registers event listeners for listeners.ContactListener.
 func (container *Container) RegisterContactListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.ContactListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.ContactListener{}))
 	_, routes := listeners.NewContactListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1728,11 +1472,7 @@ func (container *Container) RegisterContactListeners() {
 
 // RegisterEmailNotificationListeners registers event listeners for listeners.EmailNotificationListener
 func (container *Container) RegisterEmailNotificationListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listners for %T",
-		listeners.EmailNotificationListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listners for %T", listeners.EmailNotificationListener{}))
 	_, routes := listeners.NewEmailNotificationListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1746,11 +1486,7 @@ func (container *Container) RegisterEmailNotificationListeners() {
 
 // RegisterNotificationListeners registers event listeners for listeners.PhoneNotificationListener
 func (container *Container) RegisterNotificationListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listners for %T",
-		listeners.PhoneNotificationListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listners for %T", listeners.PhoneNotificationListener{}))
 	_, routes := listeners.NewNotificationListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1764,11 +1500,7 @@ func (container *Container) RegisterNotificationListeners() {
 
 // RegisterHeartbeatListeners registers event listeners for listeners.HeartbeatListener
 func (container *Container) RegisterHeartbeatListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listners for %T",
-		listeners.HeartbeatListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listners for %T", listeners.HeartbeatListener{}))
 	_, routes := listeners.NewHeartbeatListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1782,11 +1514,7 @@ func (container *Container) RegisterHeartbeatListeners() {
 
 // RegisterUserListeners registers event listeners for listeners.UserListener
 func (container *Container) RegisterUserListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listners for %T",
-		listeners.UserListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listners for %T", listeners.UserListener{}))
 	_, routes := listeners.NewUserListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1800,11 +1528,7 @@ func (container *Container) RegisterUserListeners() {
 
 // RegisterBillingListeners registers event listeners for listeners.BillingListener
 func (container *Container) RegisterBillingListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.BillingListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.BillingListener{}))
 	_, routes := listeners.NewBillingListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1818,11 +1542,7 @@ func (container *Container) RegisterBillingListeners() {
 
 // RegisterDiscordListeners registers event listeners for listeners.DiscordListener
 func (container *Container) RegisterDiscordListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.DiscordListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.DiscordListener{}))
 	_, routes := listeners.NewDiscordListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1836,15 +1556,10 @@ func (container *Container) RegisterDiscordListeners() {
 
 // RegisterMarketingListeners registers event listeners for listeners.MarketingListener
 func (container *Container) RegisterMarketingListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.MarketingListener{},
-	))
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.MarketingListener{}))
 
 	if os.Getenv("PLUNK_SECRET_KEY") == "" {
-		container.logger.Debug(
-			"skipping marketing listeners because the PLUNK_SECRET_KEY env variable is not set",
-		)
+		container.logger.Debug("skipping marketing listeners because the PLUNK_SECRET_KEY env variable is not set")
 		return
 	}
 
@@ -1861,11 +1576,7 @@ func (container *Container) RegisterMarketingListeners() {
 
 // RegisterIntegration3CXListeners registers event listeners for listeners.Integration3CXListener
 func (container *Container) RegisterIntegration3CXListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.Integration3CXListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.Integration3CXListener{}))
 	_, routes := listeners.NewIntegration3CXListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1879,11 +1590,7 @@ func (container *Container) RegisterIntegration3CXListeners() {
 
 // RegisterPhoneAPIKeyListeners registers event listeners for listeners.PhoneAPIKeyListener
 func (container *Container) RegisterPhoneAPIKeyListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.PhoneAPIKeyListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.PhoneAPIKeyListener{}))
 	_, routes := listeners.NewPhoneAPIKeyListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1897,11 +1604,7 @@ func (container *Container) RegisterPhoneAPIKeyListeners() {
 
 // RegisterPhoneListeners registers event listeners for listeners.PhoneListener
 func (container *Container) RegisterPhoneListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.PhoneListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.PhoneListener{}))
 	_, routes := listeners.NewPhoneListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1915,15 +1618,10 @@ func (container *Container) RegisterPhoneListeners() {
 
 // RegisterWebsocketListeners registers event listeners for listeners.WebsocketListener
 func (container *Container) RegisterWebsocketListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.WebsocketListener{},
-	))
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.WebsocketListener{}))
 
 	if os.Getenv("PUSHER_SECRET") == "" {
-		container.logger.Warn(stacktrace.NewErrorf(
-			"skipping websocket listeners because the PUSHER_SECRET env variable is not set",
-		))
+		container.logger.Warn(stacktrace.NewErrorf("skipping websocket listeners because the PUSHER_SECRET env variable is not set"))
 		return
 	}
 
@@ -1940,11 +1638,7 @@ func (container *Container) RegisterWebsocketListeners() {
 
 // RegisterWebhookListeners registers event listeners for listeners.WebhookListener
 func (container *Container) RegisterWebhookListeners() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering listeners for %T",
-		listeners.WebhookListener{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering listeners for %T", listeners.WebhookListener{}))
 	_, routes := listeners.NewWebhookListener(
 		container.Logger(),
 		container.Tracer(),
@@ -1959,7 +1653,6 @@ func (container *Container) RegisterWebhookListeners() {
 // MessageService creates a new instance of services.MessageService
 func (container *Container) MessageService() (service *services.MessageService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewMessageService(
 		container.Logger(),
 		container.Tracer(),
@@ -1978,25 +1671,12 @@ func (container *Container) AttachmentRepository() repositories.AttachmentReposi
 	}
 
 	bucket := os.Getenv("GCS_BUCKET_NAME")
-
 	if bucket != "" {
 		container.logger.Debug("creating GoogleCloudStorageAttachmentRepository")
-
-		client, err := storage.NewClient(
-			context.Background(),
-			option.WithAuthCredentialsJSON(
-				option.ServiceAccount,
-				container.FirebaseCredentials(),
-			),
-		)
-
+		client, err := storage.NewClient(context.Background(), option.WithAuthCredentialsJSON(option.ServiceAccount, container.FirebaseCredentials()))
 		if err != nil {
-			container.logger.Fatal(stacktrace.Propagatef(
-				err,
-				"cannot create GCS client",
-			))
+			container.logger.Fatal(stacktrace.Propagatef(err, "cannot create GCS client"))
 		}
-
 		container.attachmentRepository = repositories.NewGoogleCloudStorageAttachmentRepository(
 			container.Logger(),
 			container.Tracer(),
@@ -2004,10 +1684,7 @@ func (container *Container) AttachmentRepository() repositories.AttachmentReposi
 			bucket,
 		)
 	} else {
-		container.logger.Debug(
-			"creating MemoryAttachmentRepository (GCS_BUCKET_NAME not set)",
-		)
-
+		container.logger.Debug("creating MemoryAttachmentRepository (GCS_BUCKET_NAME not set)")
 		container.attachmentRepository = repositories.NewMemoryAttachmentRepository(
 			container.Logger(),
 			container.Tracer(),
@@ -2026,7 +1703,6 @@ func (container *Container) APIBaseURL() string {
 // AttachmentHandler creates a new AttachmentHandler
 func (container *Container) AttachmentHandler() (handler *handlers.AttachmentHandler) {
 	container.logger.Debug(fmt.Sprintf("creating %T", handler))
-
 	return handlers.NewAttachmentHandler(
 		container.Logger(),
 		container.Tracer(),
@@ -2036,18 +1712,13 @@ func (container *Container) AttachmentHandler() (handler *handlers.AttachmentHan
 
 // RegisterAttachmentRoutes registers routes for the /attachments prefix
 func (container *Container) RegisterAttachmentRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.AttachmentHandler{},
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.AttachmentHandler{}))
 	container.AttachmentHandler().RegisterRoutes(container.App())
 }
 
 // PhoneAPIKeyService creates a new instance of services.PhoneAPIKeyService
 func (container *Container) PhoneAPIKeyService() (service *services.PhoneAPIKeyService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewPhoneAPIKeyService(
 		container.Logger(),
 		container.Tracer(),
@@ -2059,7 +1730,6 @@ func (container *Container) PhoneAPIKeyService() (service *services.PhoneAPIKeyS
 // NotificationService creates a new instance of services.PhoneNotificationService
 func (container *Container) NotificationService() (service *services.PhoneNotificationService) {
 	container.logger.Debug(fmt.Sprintf("creating %T", service))
-
 	return services.NewNotificationService(
 		container.Logger(),
 		container.Tracer(),
@@ -2073,172 +1743,76 @@ func (container *Container) NotificationService() (service *services.PhoneNotifi
 
 // RegisterMessageRoutes registers routes for the /messages prefix
 func (container *Container) RegisterMessageRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.MessageHandler{},
-	))
-
-	container.MessageHandler().RegisterPhoneAPIKeyRoutes(
-		container.App(),
-		container.PhoneAPIKeyMiddleware(),
-		container.AuthenticatedMiddleware(),
-	)
-
-	container.MessageHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.MessageHandler{}))
+	container.MessageHandler().RegisterPhoneAPIKeyRoutes(container.App(), container.PhoneAPIKeyMiddleware(), container.AuthenticatedMiddleware())
+	container.MessageHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterBulkMessageRoutes registers routes for the /bulk-messages prefix
 func (container *Container) RegisterBulkMessageRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.BulkMessageHandler{},
-	))
-
-	container.BulkMessageHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.BulkMessageHandler{}))
+	container.BulkMessageHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterMessageThreadRoutes registers routes for the /message-threads prefix
 func (container *Container) RegisterMessageThreadRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.MessageThreadHandler{},
-	))
-
-	container.MessageThreadHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.MessageThreadHandler{}))
+	container.MessageThreadHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterContactRoutes registers routes for the /contacts prefix
 func (container *Container) RegisterContactRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.ContactHandler{},
-	))
-
-	container.ContactHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.ContactHandler{}))
+	container.ContactHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterHeartbeatRoutes registers routes for the /heartbeats prefix
 func (container *Container) RegisterHeartbeatRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.HeartbeatHandler{},
-	))
-
-	container.HeartbeatHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
-
-	container.HeartbeatHandler().RegisterPhoneAPIKeyRoutes(
-		container.App(),
-		container.PhoneAPIKeyMiddleware(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.HeartbeatHandler{}))
+	container.HeartbeatHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
+	container.HeartbeatHandler().RegisterPhoneAPIKeyRoutes(container.App(), container.PhoneAPIKeyMiddleware(), container.AuthenticatedMiddleware())
 }
 
 // RegisterBillingRoutes registers routes for the /billing prefix
 func (container *Container) RegisterBillingRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.BillingHandler{},
-	))
-
-	container.BillingHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.BillingHandler{}))
+	container.BillingHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterWebhookRoutes registers routes for the /webhooks prefix
 func (container *Container) RegisterWebhookRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.WebhookHandler{},
-	))
-
-	container.WebhookHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.WebhookHandler{}))
+	container.WebhookHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterPhoneRoutes registers routes for the /phone prefix
 func (container *Container) RegisterPhoneRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.PhoneHandler{},
-	))
-
-	container.PhoneHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
-
-	container.PhoneHandler().RegisterPhoneAPIKeyRoutes(
-		container.App(),
-		container.PhoneAPIKeyMiddleware(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.PhoneHandler{}))
+	container.PhoneHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
+	container.PhoneHandler().RegisterPhoneAPIKeyRoutes(container.App(), container.PhoneAPIKeyMiddleware(), container.AuthenticatedMiddleware())
 }
 
 // RegisterUserRoutes registers routes for the /users prefix
 func (container *Container) RegisterUserRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.UserHandler{},
-	))
-
-	container.UserHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.UserHandler{}))
+	container.UserHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterMessageSendScheduleRoutes registers routes for the /send-schedules prefix
 func (container *Container) RegisterMessageSendScheduleRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.MessageSendScheduleHandler{},
-	))
-
-	container.MessageSendScheduleHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.MessageSendScheduleHandler{}))
+	container.MessageSendScheduleHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterEventRoutes registers routes for the /events prefix
 func (container *Container) RegisterEventRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		&handlers.EventsHandler{},
-	))
-
-	container.EventsHandler().RegisterRoutes(
-		container.App(),
-		container.AuthenticatedMiddleware(),
-	)
+	container.logger.Debug(fmt.Sprintf("registering %T routes", &handlers.EventsHandler{}))
+	container.EventsHandler().RegisterRoutes(container.App(), container.AuthenticatedMiddleware())
 }
 
 // RegisterSwaggerRoutes registers routes for swagger
 func (container *Container) RegisterSwaggerRoutes() {
-	container.logger.Debug(fmt.Sprintf(
-		"registering %T routes",
-		swagger.HandlerDefault,
-	))
-
+	container.logger.Debug(fmt.Sprintf("registering %T routes", swagger.HandlerDefault))
 	container.App().Get("/*", swagger.New(swagger.Config{
 		Title: docs.SwaggerInfo.Title,
 		CustomScript: `
@@ -2256,21 +1830,14 @@ func (container *Container) RegisterSwaggerRoutes() {
 func (container *Container) HeartbeatRepository() repositories.HeartbeatRepository {
 	switch os.Getenv("HEARTBEAT_DB_BACKEND") {
 	case "mongodb":
-		container.logger.Debug(
-			"creating MongoDB repositories.HeartbeatRepository",
-		)
-
+		container.logger.Debug("creating MongoDB repositories.HeartbeatRepository")
 		return repositories.NewMongoHeartbeatRepository(
 			container.Logger(),
 			container.Tracer(),
 			container.MongoDB(),
 		)
-
 	default:
-		container.logger.Debug(
-			"creating GORM repositories.HeartbeatRepository",
-		)
-
+		container.logger.Debug("creating GORM repositories.HeartbeatRepository")
 		return repositories.NewGormHeartbeatRepository(
 			container.Logger(),
 			container.Tracer(),
@@ -2282,7 +1849,6 @@ func (container *Container) HeartbeatRepository() repositories.HeartbeatReposito
 // UserRepository registers a new instance of repositories.UserRepository
 func (container *Container) UserRepository() repositories.UserRepository {
 	container.logger.Debug("creating GORM repositories.UserRepository")
-
 	return repositories.NewGormUserRepository(
 		container.Logger(),
 		container.Tracer(),
@@ -2296,29 +1862,16 @@ func (container *Container) PhoneRistrettoCache() *ristretto.Cache[string, *enti
 	if container.phoneRistrettoCache != nil {
 		return container.phoneRistrettoCache
 	}
-
-	container.logger.Debug(fmt.Sprintf(
-		"creating %T",
-		container.phoneRistrettoCache,
-	))
-
-	ristrettoCache, err := ristretto.NewCache[string, *entities.Phone](
-		&ristretto.Config[string, *entities.Phone]{
-			MaxCost:     5000,
-			NumCounters: 5000 * 10,
-			BufferItems: 64,
-		},
-	)
-
+	container.logger.Debug(fmt.Sprintf("creating %T", container.phoneRistrettoCache))
+	ristrettoCache, err := ristretto.NewCache[string, *entities.Phone](&ristretto.Config[string, *entities.Phone]{
+		MaxCost:     5000,
+		NumCounters: 5000 * 10,
+		BufferItems: 64,
+	})
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot create phone ristretto cache",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot create phone ristretto cache"))
 	}
-
 	container.phoneRistrettoCache = ristrettoCache
-
 	return container.phoneRistrettoCache
 }
 
@@ -2327,29 +1880,16 @@ func (container *Container) ContactRistrettoCache() *ristretto.Cache[string, ser
 	if container.contactRistrettoCache != nil {
 		return container.contactRistrettoCache
 	}
-
-	container.logger.Debug(fmt.Sprintf(
-		"creating %T",
-		container.contactRistrettoCache,
-	))
-
-	ristrettoCache, err := ristretto.NewCache[string, services.ContactCacheEntry](
-		&ristretto.Config[string, services.ContactCacheEntry]{
-			MaxCost:     5000,
-			NumCounters: 5000 * 10,
-			BufferItems: 64,
-		},
-	)
-
+	container.logger.Debug(fmt.Sprintf("creating %T", container.contactRistrettoCache))
+	ristrettoCache, err := ristretto.NewCache[string, services.ContactCacheEntry](&ristretto.Config[string, services.ContactCacheEntry]{
+		MaxCost:     5000,
+		NumCounters: 5000 * 10,
+		BufferItems: 64,
+	})
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot create contact ristretto cache",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot create contact ristretto cache"))
 	}
-
 	container.contactRistrettoCache = ristrettoCache
-
 	return container.contactRistrettoCache
 }
 
@@ -2358,95 +1898,30 @@ func (container *Container) UserRistrettoCache() *ristretto.Cache[string, entiti
 	if container.userRistrettoCache != nil {
 		return container.userRistrettoCache
 	}
-
-	container.logger.Debug(fmt.Sprintf(
-		"creating %T",
-		container.userRistrettoCache,
-	))
-
-	ristrettoCache, err := ristretto.NewCache[string, entities.AuthContext](
-		&ristretto.Config[string, entities.AuthContext]{
-			MaxCost:     5000,
-			NumCounters: 5000 * 10,
-			BufferItems: 64,
-		},
-	)
-
+	container.logger.Debug(fmt.Sprintf("creating %T", container.userRistrettoCache))
+	ristrettoCache, err := ristretto.NewCache[string, entities.AuthContext](&ristretto.Config[string, entities.AuthContext]{
+		MaxCost:     5000,
+		NumCounters: 5000 * 10,
+		BufferItems: 64,
+	})
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot create user ristretto cache",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot create user ristretto cache"))
 	}
-
 	container.userRistrettoCache = ristrettoCache
-
-	return container.userRistrettoCache
+	return ristrettoCache
 }
 
-// InitializeTraceProvider initializes the OpenTelemetry trace provider.
-//
-// Self-hosted deployments default to console/no external telemetry.
-//
-// Set OBSERVABILITY_PROVIDER to:
-//   - console: no external telemetry
-//   - axiom: Axiom telemetry
-//   - uptrace: Uptrace telemetry
-//   - google: Google Cloud telemetry
+// InitializeTraceProvider initializes the open telemetry trace provider
 func (container *Container) InitializeTraceProvider() func() {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("OBSERVABILITY_PROVIDER"))) {
-	case "axiom":
-		return container.initializeAxiomTraceProvider(
-			container.version,
-			container.projectID,
-		)
-
-	case "uptrace":
-		return container.initializeUptraceProvider(
-			container.version,
-			container.projectID,
-		)
-
-	case "google":
-		return container.initializeGoogleTraceProvider(
-			container.version,
-			container.projectID,
-		)
-
-	case "", "console", "none", "disabled":
-		// Self-hosted mode.
-		// Do not initialize any external telemetry provider.
-		container.logger.Debug(
-			"external telemetry disabled; using console logging",
-		)
-
-		return func() {}
-
-	default:
-		container.logger.Warn(stacktrace.NewErrorf(
-			"unknown OBSERVABILITY_PROVIDER [%s]; using console logging",
-			os.Getenv("OBSERVABILITY_PROVIDER"),
-		))
-
-		return func() {}
-	}
+	return container.initializeAxiomTraceProvider(container.version, container.projectID)
 }
 
-func (container *Container) initializeGoogleTraceProvider(
-	version string,
-	namespace string,
-) func() {
+func (container *Container) initializeGoogleTraceProvider(version string, namespace string) func() {
 	container.logger.Debug("initializing google trace meterProvider")
 
-	traceExporter, err := cloudtrace.New(
-		cloudtrace.WithProjectID(os.Getenv("GCP_PROJECT_ID")),
-	)
-
+	traceExporter, err := cloudtrace.New(cloudtrace.WithProjectID(os.Getenv("GCP_PROJECT_ID")))
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot create cloud trace traceExporter",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot create cloud trace traceExporter"))
 	}
 
 	tp := trace.NewTracerProvider(
@@ -2454,48 +1929,30 @@ func (container *Container) initializeGoogleTraceProvider(
 		trace.WithSampler(trace.AlwaysSample()),
 		trace.WithResource(container.OtelResources(version, namespace)),
 	)
-
 	otel.SetTracerProvider(tp)
 
-	metricExporter, err := mexporter.New(
-		mexporter.WithProjectID(os.Getenv("GCP_PROJECT_ID")),
-	)
-
+	metricExporter, err := mexporter.New(mexporter.WithProjectID(os.Getenv("GCP_PROJECT_ID")))
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot create cloud metric traceExporter",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot create cloud metric traceExporter"))
 	}
 
 	meterProvider := metric.NewMeterProvider(
 		metric.WithReader(metric.NewPeriodicReader(metricExporter)),
 		metric.WithResource(container.OtelResources(version, namespace)),
 	)
-
 	otel.SetMeterProvider(meterProvider)
 
 	return func() {
 		if err = metricExporter.Shutdown(context.Background()); err != nil {
-			container.logger.Error(stacktrace.Propagatef(
-				err,
-				"cannot shutdown cloud metric metric exporter",
-			))
+			container.logger.Error(stacktrace.Propagatef(err, "cannot shutdown cloud metric metric exporter"))
 		}
-
 		if err = traceExporter.Shutdown(context.Background()); err != nil {
-			container.logger.Error(stacktrace.Propagatef(
-				err,
-				"cannot shutdown cloud trace trace exporter",
-			))
+			container.logger.Error(stacktrace.Propagatef(err, "cannot shutdown cloud trace trace exporter"))
 		}
 	}
 }
 
-func (container *Container) initializeAxiomTraceProvider(
-	version string,
-	namespace string,
-) func() {
+func (container *Container) initializeAxiomTraceProvider(version string, namespace string) func() {
 	container.logger.Debug("initializing axiom trace provider")
 
 	traceHeaders := map[string]string{
@@ -2508,12 +1965,8 @@ func (container *Container) initializeAxiomTraceProvider(
 		otlptracehttp.WithEndpoint("us-east-1.aws.edge.axiom.co"),
 		otlptracehttp.WithHeaders(traceHeaders),
 	)
-
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot create axiom OTLP trace exporter",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot create axiom OTLP trace exporter"))
 	}
 
 	tp := trace.NewTracerProvider(
@@ -2521,15 +1974,12 @@ func (container *Container) initializeAxiomTraceProvider(
 		trace.WithSampler(trace.AlwaysSample()),
 		trace.WithResource(container.OtelResources(version, namespace)),
 	)
-
 	otel.SetTracerProvider(tp)
 
-	otel.SetTextMapPropagator(
-		propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{},
-			propagation.Baggage{},
-		),
-	)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
 
 	metricHeaders := map[string]string{
 		"Authorization":   "Bearer " + os.Getenv("AXIOM_TOKEN"),
@@ -2541,44 +1991,29 @@ func (container *Container) initializeAxiomTraceProvider(
 		otlpmetrichttp.WithEndpoint("us-east-1.aws.edge.axiom.co"),
 		otlpmetrichttp.WithHeaders(metricHeaders),
 	)
-
 	if err != nil {
-		container.logger.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot create axiom OTLP metric exporter",
-		))
+		container.logger.Fatal(stacktrace.Propagatef(err, "cannot create axiom OTLP metric exporter"))
 	}
 
 	meterProvider := metric.NewMeterProvider(
 		metric.WithReader(metric.NewPeriodicReader(metricExporter)),
 		metric.WithResource(container.OtelResources(version, namespace)),
 	)
-
 	otel.SetMeterProvider(meterProvider)
 
 	return func() {
 		if err := tp.Shutdown(context.Background()); err != nil {
-			container.logger.Error(stacktrace.Propagatef(
-				err,
-				"cannot shutdown axiom trace provider",
-			))
+			container.logger.Error(stacktrace.Propagatef(err, "cannot shutdown axiom trace provider"))
 		}
-
 		if err := meterProvider.Shutdown(context.Background()); err != nil {
-			container.logger.Error(stacktrace.Propagatef(
-				err,
-				"cannot shutdown axiom meter provider",
-			))
+			container.logger.Error(stacktrace.Propagatef(err, "cannot shutdown axiom meter provider"))
 		}
 	}
 }
 
-func (container *Container) initializeUptraceProvider(
-	version string,
-	namespace string,
-) (flush func()) {
+func (container *Container) initializeUptraceProvider(version string, namespace string) (flush func()) {
 	container.logger.Debug("initializing uptrace provider")
-
+	// Configure OpenTelemetry with sensible defaults.
 	uptrace.ConfigureOpentelemetry(
 		uptrace.WithDSN(os.Getenv("UPTRACE_DSN")),
 		uptrace.WithServiceName(namespace),
@@ -2586,9 +2021,9 @@ func (container *Container) initializeUptraceProvider(
 		uptrace.WithDeploymentEnvironment(os.Getenv("ENV")),
 	)
 
+	// Send buffered spans and free resources.
 	return func() {
 		err := uptrace.Shutdown(context.Background())
-
 		if err != nil {
 			container.logger.Error(err)
 		}
@@ -2609,80 +2044,42 @@ func logger(skipFrameCount int) telemetry.Logger {
 	)
 }
 
-// logDriver returns console logging by default.
-//
-// Axiom is never selected automatically. It is only selected when:
-//
-// OBSERVABILITY_PROVIDER=axiom
 func logDriver(skipFrameCount int) *zerodriver.Logger {
-	if strings.EqualFold(
-		strings.TrimSpace(os.Getenv("OBSERVABILITY_PROVIDER")),
-		"axiom",
-	) {
-		return axiomLogger(skipFrameCount)
+	if isLocal() {
+		return consoleLogger(skipFrameCount)
 	}
-
-	return consoleLogger(skipFrameCount)
+	return axiomLogger(skipFrameCount)
 }
 
 func axiomLogger(skipFrameCount int) *zerodriver.Logger {
 	axiomWriter, err := axiomzerolog.New(
-		axiomzerolog.SetLevels(
-			[]zerolog.Level{
-				zerolog.TraceLevel,
-				zerolog.DebugLevel,
-				zerolog.InfoLevel,
-				zerolog.WarnLevel,
-				zerolog.ErrorLevel,
-				zerolog.PanicLevel,
-				zerolog.FatalLevel,
-				zerolog.NoLevel,
-			},
-		),
-		axiomzerolog.SetDataset(
-			os.Getenv("AXIOM_DATASET_EVENTS"),
-		),
+		axiomzerolog.SetLevels([]zerolog.Level{zerolog.TraceLevel, zerolog.DebugLevel, zerolog.InfoLevel, zerolog.WarnLevel, zerolog.ErrorLevel, zerolog.PanicLevel, zerolog.FatalLevel, zerolog.NoLevel}),
+		axiomzerolog.SetDataset(os.Getenv("AXIOM_DATASET_EVENTS")),
 	)
-
 	if err != nil {
-		log.Fatal(stacktrace.Propagatef(
-			err,
-			"cannot create axiom zerolog writer",
-		))
+		log.Fatal(stacktrace.Propagatef(err, "cannot create axiom zerolog writer"))
 	}
 
-	zl := zerolog.New(axiomWriter).
-		With().
-		Timestamp().
-		CallerWithSkipFrameCount(skipFrameCount).
-		Logger()
-
-	return &zerodriver.Logger{
-		Logger: &zl,
-	}
+	zl := zerolog.New(axiomWriter).With().Timestamp().CallerWithSkipFrameCount(skipFrameCount).Logger()
+	return &zerodriver.Logger{Logger: &zl}
 }
 
 func instanceID() string {
 	h, err := os.Hostname()
-
 	if err != nil {
 		h = strconv.Itoa(os.Getpid())
 	}
-
 	if metadata.OnGCE() {
 		return getGCEInstanceID(h)
 	}
-
 	return h
 }
 
 func getGCEInstanceID(hostname string) string {
 	instanceID, err := metadata.InstanceIDWithContext(context.Background())
-
 	if err != nil {
 		return hostname
 	}
-
 	return instanceID
 }
 
@@ -2691,12 +2088,7 @@ func consoleLogger(skipFrameCount int) *zerodriver.Logger {
 		zerolog.ConsoleWriter{
 			Out: os.Stderr,
 		},
-	).
-		With().
-		Timestamp().
-		CallerWithSkipFrameCount(skipFrameCount).
-		Logger()
-
+	).With().Timestamp().CallerWithSkipFrameCount(skipFrameCount).Logger()
 	return &zerodriver.Logger{
 		Logger: &l,
 	}
@@ -2705,4 +2097,3 @@ func consoleLogger(skipFrameCount int) *zerodriver.Logger {
 func isLocal() bool {
 	return os.Getenv("ENV") == "local"
 }
-```
