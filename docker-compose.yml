@@ -52,14 +52,18 @@ services:
       dockerfile: Dockerfile
       args:
         GIT_COMMIT: ${GIT_COMMIT:-self-hosted}
+
     restart: unless-stopped
+
     environment:
       PORT: "8000"
       APP_PORT: "8000"
       APP_HOST: "0.0.0.0"
       APP_ENV: "production"
+      ENV: "production"
 
       DATABASE_URL: postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+      DATABASE_URL_DEDICATED: postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
       REDIS_URI: redis://redis:6379
       REDIS_URL: redis://redis:6379
 
@@ -75,17 +79,52 @@ services:
 
       CLOUDFLARE_TURNSTILE_SECRET_KEY: ${CLOUDFLARE_TURNSTILE_SECRET_KEY}
 
-      EVENTS_QUEUE_TYPE: ${EVENTS_QUEUE_TYPE:-redis}
-      EVENTS_QUEUE_USER_ID: ${EVENTS_QUEUE_USER_ID}
-      EVENTS_QUEUE_USER_API_KEY: ${EVENTS_QUEUE_USER_API_KEY}
+      EVENTS_QUEUE_TYPE: ${EVENTS_QUEUE_TYPE:-emulator}
+      EVENTS_QUEUE_USER_ID: ${EVENTS_QUEUE_USER_ID:-}
+      EVENTS_QUEUE_USER_API_KEY: ${EVENTS_QUEUE_USER_API_KEY:-}
       EVENTS_QUEUE_NAME: ${EVENTS_QUEUE_NAME:-httpsms-events}
-      EVENTS_QUEUE_ENDPOINT: ${EVENTS_QUEUE_ENDPOINT:-redis://redis:6379}
+      EVENTS_QUEUE_ENDPOINT: ${EVENTS_QUEUE_ENDPOINT:-https://sms-api.ztechai.us/v1/events}
 
       APP_URL: https://sms.ztechai.us
-      API_BASE_URL: https://sms-api.ztechai.us
+      APP_NAME: ${APP_NAME:-ZTechAI SMS Gateway}
+      APP_LOGO_URL: ${APP_LOGO_URL:-https://sms.ztechai.us/favicon.ico}
 
       LEMON_SQUEEZY_API_KEY: ${LEMON_SQUEEZY_API_KEY:-}
       LEMON_SQUEEZY_SIGNING_SECRET: ${LEMON_SQUEEZY_SIGNING_SECRET:-}
+
+      ENTITLEMENT_ENABLED: ${ENTITLEMENT_ENABLED:-false}
+
+      CONTACT_DB_BACKEND: ${CONTACT_DB_BACKEND:-postgres}
+      HEARTBEAT_DB_BACKEND: ${HEARTBEAT_DB_BACKEND:-postgres}
+
+      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME:-}
+
+      PUSHER_APP_ID: ${PUSHER_APP_ID:-}
+      PUSHER_KEY: ${PUSHER_KEY:-}
+      PUSHER_SECRET: ${PUSHER_SECRET:-}
+      PUSHER_CLUSTER: ${PUSHER_CLUSTER:-}
+
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+
+      PLUNK_SECRET_KEY: ${PLUNK_SECRET_KEY:-}
+      PLUNK_PUBLIC_KEY: ${PLUNK_PUBLIC_KEY:-}
+
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-https://sms.ztechai.us}
+      CORS_ALLOW_HEADERS: ${CORS_ALLOW_HEADERS:-*}
+      CORS_ALLOW_METHODS: ${CORS_ALLOW_METHODS:-GET,POST,PUT,DELETE,OPTIONS}
+      CORS_EXPOSE_HEADERS: ${CORS_EXPOSE_HEADERS:-*}
+
+      DATABASE_MIGRATION_SKIP: ${DATABASE_MIGRATION_SKIP:-0}
+      DATABASE_MIGRATION_CONSTRAINT_FIX: ${DATABASE_MIGRATION_CONSTRAINT_FIX:-1}
+
+      USE_HTTP_LOGGER: ${USE_HTTP_LOGGER:-1}
+
+      AXIOM_TOKEN: ${AXIOM_TOKEN:-}
+      AXIOM_DATASET_EVENTS: ${AXIOM_DATASET_EVENTS:-}
+      AXIOM_DATASET_METRICS: ${AXIOM_DATASET_METRICS:-}
+
+      UPTRACE_DSN: ${UPTRACE_DSN:-}
 
     expose:
       - "8000"
@@ -109,12 +148,14 @@ services:
         FIREBASE_STORAGE_BUCKET: ${FIREBASE_STORAGE_BUCKET}
         FIREBASE_MESSAGING_SENDER_ID: ${FIREBASE_MESSAGING_SENDER_ID}
         FIREBASE_APP_ID: ${FIREBASE_APP_ID}
+
         CLOUDFLARE_TURNSTILE_SITE_KEY: ${CLOUDFLARE_TURNSTILE_SITE_KEY}
 
     restart: unless-stopped
 
     environment:
       PORT: "3000"
+      NUXT_PUBLIC_API_BASE_URL: https://sms-api.ztechai.us
 
     expose:
       - "3000"
