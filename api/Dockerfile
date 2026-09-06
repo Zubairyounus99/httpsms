@@ -32,6 +32,9 @@ RUN apk add --no-cache curl ca-certificates tzdata && \
 
 WORKDIR /home/http-sms
 
+# Create an empty .env file so godotenv.Load(".env") doesn't throw a fatal error
+RUN touch .env && chown http-sms:http-sms .env
+
 COPY --from=builder /usr/local/go/lib/time/zoneinfo.zip /zoneinfo.zip
 COPY --from=builder /bin/http-sms ./
 COPY --from=builder /http-sms/root.crt ./
