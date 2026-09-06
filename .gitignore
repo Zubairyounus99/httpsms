@@ -19,3 +19,7 @@ SECURITY_AUDIT_REPORT.md
 skills-lock.json
 .worktrees/
 docs/superpowers
+.env
+api/.env
+web/.env
+firebase-credentials.json
