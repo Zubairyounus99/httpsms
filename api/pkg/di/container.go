@@ -2051,17 +2051,27 @@ func logDriver(skipFrameCount int) *zerodriver.Logger {
 	return axiomLogger(skipFrameCount)
 }
 
-func axiomLogger(skipFrameCount int) *zerodriver.Logger {
-	axiomWriter, err := axiomzerolog.New(
-		axiomzerolog.SetLevels([]zerolog.Level{zerolog.TraceLevel, zerolog.DebugLevel, zerolog.InfoLevel, zerolog.WarnLevel, zerolog.ErrorLevel, zerolog.PanicLevel, zerolog.FatalLevel, zerolog.NoLevel}),
-		axiomzerolog.SetDataset(os.Getenv("AXIOM_DATASET_EVENTS")),
-	)
-	if err != nil {
-		log.Fatal(stacktrace.Propagatef(err, "cannot create axiom zerolog writer"))
+func (c *Container) axiomLogger() (zerolog.Logger, error) {
+	if os.Getenv("AXIOM_TOKEN") == "" {
+		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+		return zerolog.New(output).With().Timestamp().Logger(), nil
 	}
 
-	zl := zerolog.New(axiomWriter).With().Timestamp().CallerWithSkipFrameCount(skipFrameCount).Logger()
-	return &zerodriver.Logger{Logger: &zl}
+	client, err := axiom.NewClient()
+	if err != nil {
+		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+		return zerolog.New(output).With().Timestamp().Logger(), nil
+	}
+
+	writer, err := adapter.New(adapter.SetClient(client), adapter.SetDataset(c.Config.AxiomDataset))
+	if err != nil {
+		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+		return zerolog.New(output).With().Timestamp().Logger(), nil
+	}
+
+	return zerolog.New(writer).With().Timestamp().Logger(), nil
+}
+
 }
 
 func instanceID() string {
