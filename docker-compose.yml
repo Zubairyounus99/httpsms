@@ -5,9 +5,9 @@ services:
     command: start-single-node --insecure --store=type=mem,size=0.25GB
     volumes:
       - cockroach_data:/cockroach/cockroach-data
-    ports:
-      - "26257:26257"
-      - "8081:8080"
+    expose:
+      - "26257"
+      - "8080"
 
   redis:
     image: redis:7-alpine
@@ -15,8 +15,8 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
+    expose:
+      - "6379"
 
   api:
     build:
@@ -37,8 +37,8 @@ services:
       - CLOUDFLARE_TURNSTILE_SECRET_KEY=${CLOUDFLARE_TURNSTILE_SECRET_KEY}
       - EVENTS_QUEUE_USER_ID=${EVENTS_QUEUE_USER_ID}
       - EVENTS_QUEUE_USER_API_KEY=${EVENTS_QUEUE_USER_API_KEY}
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       - cockroachdb
       - redis
@@ -59,8 +59,8 @@ services:
     restart: unless-stopped
     environment:
       - PORT=3000
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     depends_on:
       - api
 
