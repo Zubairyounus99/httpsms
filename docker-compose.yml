@@ -1,51 +1,70 @@
+version: '3.8'
+
 services:
-  postgres:
-    image: postgres:alpine
-    environment:
-      POSTGRES_DB: httpsms
-      POSTGRES_PASSWORD: dbpassword
-      POSTGRES_USER: dbusername
+  cockroachdb:
+    image: cockroachdb/cockroach:v23.2.0
+    restart: unless-stopped
+    command: start-single-node --insecure --store=type=mem,size=0.25GB
     volumes:
-      - postgres:/var/lib/postgresql/data
+      - cockroach_data:/cockroach/cockroach-data
     ports:
-      - "5435:5432"
-    restart: on-failure
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 30s
-      timeout: 60s
-      retries: 5
-      start_period: 5s
+      - "26257:26257"
+      - "8081:8080"
 
   redis:
-    image: redis:latest
-    command: redis-server
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
     volumes:
-      - redis:/var/lib/redis
-    restart: on-failure
+      - redis_data:/data
+    ports:
+      - "6379:6379"
 
   api:
     build:
-      context: ./api
+      context: .
+      dockerfile: ./api/Dockerfile
+    restart: unless-stopped
+    environment:
+      - PORT=8000
+      - APP_ENV=production
+      - DATABASE_URL=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+      - REDIS_URI=redis://redis:6379
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - FIREBASE_CREDENTIALS=${FIREBASE_CREDENTIALS}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - CLOUDFLARE_TURNSTILE_SECRET_KEY=${CLOUDFLARE_TURNSTILE_SECRET_KEY}
+      - EVENTS_QUEUE_USER_ID=${EVENTS_QUEUE_USER_ID}
+      - EVENTS_QUEUE_USER_API_KEY=${EVENTS_QUEUE_USER_API_KEY}
     ports:
       - "8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    env_file:
-      - ./api/.env
+      - cockroachdb
+      - redis
 
   web:
     build:
-      context: ./web
+      context: .
+      dockerfile: ./web/Dockerfile
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL}
+      - NUXT_PUBLIC_FIREBASE_API_KEY=${FIREBASE_API_KEY}
+      - NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}
+      - NUXT_PUBLIC_FIREBASE_PROJECT_ID=${GCP_PROJECT_ID}
+      - NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
+      - NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${FIREBASE_MESSAGING_SENDER_ID}
+      - NUXT_PUBLIC_FIREBASE_APP_ID=${FIREBASE_APP_ID}
+      - NUXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=${CLOUDFLARE_TURNSTILE_SITE_KEY}
     ports:
       - "3000:3000"
     depends_on:
-      api:
-        condition: service_started
+      - api
 
 volumes:
-  redis:
-  postgres:
+  cockroach_data:
+  redis_data:
