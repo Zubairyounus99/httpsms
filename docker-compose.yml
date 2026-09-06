@@ -22,8 +22,6 @@ services:
     command: redis-server
     volumes:
       - redis:/var/lib/redis
-    ports:
-      - "6379:6379"
     restart: on-failure
 
   api:
