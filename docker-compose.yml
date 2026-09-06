@@ -25,8 +25,7 @@ services:
     restart: unless-stopped
     environment:
       - PORT=8000
-      - APP_ENV=local
-      - LOG_LEVEL=info
+      - APP_ENV=production
       - DATABASE_URL=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
       - REDIS_URI=redis://redis:6379
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
