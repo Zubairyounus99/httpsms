@@ -2,68 +2,130 @@ services:
   cockroachdb:
     image: cockroachdb/cockroach:v23.2.0
     restart: unless-stopped
-    command: start-single-node --insecure --store=/cockroach/cockroach-data
+    command:
+      - start-single-node
+      - --insecure
+      - --store=/cockroach/cockroach-data
     volumes:
       - cockroach_data:/cockroach/cockroach-data
     expose:
       - "26257"
       - "8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:8080/health?ready=1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
     volumes:
       - redis_data:/data
     expose:
       - "6379"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   api:
     build:
       context: ./api
       dockerfile: Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-self-hosted}
     restart: unless-stopped
     environment:
-      - PORT=8000
-      - APP_ENV=production
-      - DATABASE_URL=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
-      - REDIS_URI=redis://redis:6379
-      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
-      - FIREBASE_CREDENTIALS=${FIREBASE_CREDENTIALS}
-      - SMTP_USERNAME=${SMTP_USERNAME}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
-      - CLOUDFLARE_TURNSTILE_SECRET_KEY=${CLOUDFLARE_TURNSTILE_SECRET_KEY}
-      - EVENTS_QUEUE_USER_ID=${EVENTS_QUEUE_USER_ID}
-      - EVENTS_QUEUE_USER_API_KEY=${EVENTS_QUEUE_USER_API_KEY}
+      PORT: "8000"
+      APP_PORT: "8000"
+      APP_HOST: "0.0.0.0"
+      APP_ENV: "production"
+
+      DATABASE_URL: postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+      REDIS_URI: redis://redis:6379
+      REDIS_URL: redis://redis:6379
+
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      FIREBASE_CREDENTIALS: ${FIREBASE_CREDENTIALS}
+
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ZTechAI SMS Gateway}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+
+      CLOUDFLARE_TURNSTILE_SECRET_KEY: ${CLOUDFLARE_TURNSTILE_SECRET_KEY}
+
+      EVENTS_QUEUE_TYPE: ${EVENTS_QUEUE_TYPE:-redis}
+      EVENTS_QUEUE_USER_ID: ${EVENTS_QUEUE_USER_ID}
+      EVENTS_QUEUE_USER_API_KEY: ${EVENTS_QUEUE_USER_API_KEY}
+      EVENTS_QUEUE_NAME: ${EVENTS_QUEUE_NAME:-httpsms-events}
+      EVENTS_QUEUE_ENDPOINT: ${EVENTS_QUEUE_ENDPOINT:-redis://redis:6379}
+
+      APP_URL: https://sms.ztechai.us
+      API_BASE_URL: https://sms-api.ztechai.us
+
+      LEMON_SQUEEZY_API_KEY: ${LEMON_SQUEEZY_API_KEY:-}
+      LEMON_SQUEEZY_SIGNING_SECRET: ${LEMON_SQUEEZY_SIGNING_SECRET:-}
+
     expose:
       - "8000"
+
     depends_on:
-      - cockroachdb
-      - redis
+      cockroachdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   web:
     build:
       context: ./web
       dockerfile: Dockerfile
       args:
-        - NUXT_PUBLIC_API_BASE_URL=https://sms-api.ztechai.us
-        - FIREBASE_API_KEY=${FIREBASE_API_KEY}
-        - FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}
-        - GCP_PROJECT_ID=${GCP_PROJECT_ID}
-        - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
-        - FIREBASE_MESSAGING_SENDER_ID=${FIREBASE_MESSAGING_SENDER_ID}
-        - FIREBASE_APP_ID=${FIREBASE_APP_ID}
-        - CLOUDFLARE_TURNSTILE_SITE_KEY=${CLOUDFLARE_TURNSTILE_SITE_KEY}
+        NUXT_PUBLIC_API_BASE_URL: https://sms-api.ztechai.us
+
+        FIREBASE_API_KEY: ${FIREBASE_API_KEY}
+        FIREBASE_AUTH_DOMAIN: ${FIREBASE_AUTH_DOMAIN}
+        GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+        FIREBASE_STORAGE_BUCKET: ${FIREBASE_STORAGE_BUCKET}
+        FIREBASE_MESSAGING_SENDER_ID: ${FIREBASE_MESSAGING_SENDER_ID}
+        FIREBASE_APP_ID: ${FIREBASE_APP_ID}
+        CLOUDFLARE_TURNSTILE_SITE_KEY: ${CLOUDFLARE_TURNSTILE_SITE_KEY}
+
     restart: unless-stopped
+
     environment:
-      - PORT=3000
+      PORT: "3000"
+
     expose:
       - "3000"
+
     depends_on:
-      - api
+      api:
+        condition: service_started
 
 volumes:
   cockroach_data:
+    name: httpsms_cockroach_data
+
   redis_data:
+    name: httpsms_redis_data
