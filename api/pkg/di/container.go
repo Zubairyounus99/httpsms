@@ -2050,9 +2050,18 @@ func logDriver(skipFrameCount int) *zerodriver.Logger {
 	}
 	return axiomLogger(skipFrameCount)
 }
-func (c *Container) axiomLogger() (zerolog.Logger, error) {
-	output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
-	return zerolog.New(output).With().Timestamp().Logger(), nil
+
+func axiomLogger(skipFrameCount int) *zerodriver.Logger {
+	axiomWriter, err := axiomzerolog.New(
+		axiomzerolog.SetLevels([]zerolog.Level{zerolog.TraceLevel, zerolog.DebugLevel, zerolog.InfoLevel, zerolog.WarnLevel, zerolog.ErrorLevel, zerolog.PanicLevel, zerolog.FatalLevel, zerolog.NoLevel}),
+		axiomzerolog.SetDataset(os.Getenv("AXIOM_DATASET_EVENTS")),
+	)
+	if err != nil {
+		log.Fatal(stacktrace.Propagatef(err, "cannot create axiom zerolog writer"))
+	}
+
+	zl := zerolog.New(axiomWriter).With().Timestamp().CallerWithSkipFrameCount(skipFrameCount).Logger()
+	return &zerodriver.Logger{Logger: &zl}
 }
 
 func instanceID() string {
