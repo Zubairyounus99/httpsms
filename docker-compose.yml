@@ -25,12 +25,8 @@ services:
     restart: unless-stopped
     environment:
       - PORT=8000
-      - APP_ENV=development
-      - LOG_LEVEL=debug
-      - LOG_WRITER=console
-      - AXIOM_TOKEN=xapt-00000000-0000-0000-0000-000000000000
-      - AXIOM_ORG_ID=00000000-0000-0000-0000-000000000000
-      - AXIOM_DATASET=default
+      - APP_ENV=local
+      - LOG_LEVEL=info
       - DATABASE_URL=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
       - REDIS_URI=redis://redis:6379
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
