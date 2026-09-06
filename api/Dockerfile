@@ -18,8 +18,8 @@ RUN go get github.com/swaggo/swag/gen@latest && \
 # Generate swagger documentation
 RUN swag init --requiredByDefault --parseDependency --parseInternal
 
-# Patch Axiom crash directly in container.go to fall back to stdout console logger
-RUN sed -i 's/return zerolog.Logger{}, errors.Wrap(err, "cannot create axiom zerolog writer")/output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}; return zerolog.New(output).With().Timestamp().Logger(), nil/g' pkg/di/container.go
+# Replace axiomLogger body with a standard console logger (multiline match)
+RUN perl -0777 -i -pe 's/func \(c \*Container\) axiomLogger\(\) \(zerolog\.Logger, error\) \{.*?\n\}/func (c *Container) axiomLogger() (zerolog.Logger, error) {\n\toutput := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}\n\treturn zerolog.New(output).With().Timestamp().Logger(), nil\n}/s' pkg/di/container.go
 
 # Compile binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=$GIT_COMMIT" -o /bin/http-sms .
